@@ -1,0 +1,17 @@
+{
+  "channel": "live",
+  "generated": "2026-09-05T23:29:38.489Z",
+  "core": {
+    "version": "5.0.0",
+    "url": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/apoz-core.user.js"
+  },
+  "modules": [
+    {
+      "id": "eta-tracker",
+      "label": "Combat Slot ETA Tracker",
+      "version": "4.0.0",
+      "url": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/eta-tracker.user.js",
+      "notes": ""
+    }
+  ]
+}
