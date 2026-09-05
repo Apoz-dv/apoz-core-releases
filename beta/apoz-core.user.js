@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      5.0.0-beta
+// @version      5.1.0-beta
 // @description  The shell every Apoz module plugs into: the nav launcher, the module and tool registries, shared number handling for the game's per-character decimal convention, and update checking. Install this first — on its own it adds a menu and nothing else.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "beta",
-    "version": "5.0.0-beta",
+    "version": "5.1.0-beta",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/beta/manifest.json"
   };
   // ==== END GENERATED ====

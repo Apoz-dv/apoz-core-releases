@@ -4,384 +4,378 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
+/* ---------------------------------------------------------------------------
+   THEME. Light is a warm beach/sand palette, not white - soft on the eyes but
+   unambiguously light mode. Dark is its own design, not an inversion. Every
+   colour is a token declared on bare :root first, so the un-stamped "system"
+   state resolves correctly.
+--------------------------------------------------------------------------- */
 :root{
-  --bg:#eef0ea; --surface:#fff; --surface-2:#f4f5f0; --border:#d7dbd0;
-  --text:#1b2420; --text-muted:#5c655d; --text-faint:#8a9189;
-  --blue:#1f5fa8; --blue-soft:#3987e5; --orange:#b8501f; --orange-soft:#eb6834;
-  --success:#2f8f5b; --rail:#c7cdc0; --band:#fbf3e2; --current:#e6f0ee; --warnbg:#fbf1de; --warnborder:#c98500;
+  --bg:#efe7d7; --surface:#faf5ec; --surface-2:#f1e8d8; --surface-3:#e7dcc7;
+  --border:#d8cbb2; --border-strong:#c3b193;
+  --text:#33291d; --text-muted:#6b5c48; --text-faint:#94836c;
+  --accent:#1d6f6a; --accent-soft:#2a8f88;
+  --warm:#b5541f; --warm-soft:#d2691e;
+  --success:#3f7d4e; --band:#f6e9cd; --current:#dcebe6;
+  --shadow:0 1px 2px rgba(80,60,35,.07), 0 4px 14px rgba(80,60,35,.06);
   --mono:'IBM Plex Mono',ui-monospace,monospace;
   --sans:'IBM Plex Sans',system-ui,sans-serif;
   --display:'Big Shoulders Display','Arial Narrow',sans-serif;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#10151a; --surface:#171e25; --surface-2:#1c242c; --border:#2a343d;
-    --text:#e7ecef; --text-muted:#97a3ad; --text-faint:#616f79;
-    --blue:#5b9de3; --blue-soft:#3987e5; --orange:#e8935f; --orange-soft:#d95926;
-    --success:#6fcf97; --rail:#33404a; --band:#241f14; --current:#152522; --warnbg:#241f14; --warnborder:#c98500;
+    --bg:#141a1e; --surface:#1c242a; --surface-2:#222c33; --surface-3:#2a353d;
+    --border:#33414a; --border-strong:#465862;
+    --text:#e8eef0; --text-muted:#9aabb4; --text-faint:#6b7c86;
+    --accent:#5ec5bc; --accent-soft:#7ad6cd;
+    --warm:#e79055; --warm-soft:#f0a771;
+    --success:#6fcf97; --band:#2a2418; --current:#17322f;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
   }
 }
 :root[data-theme="dark"]{
-  --bg:#10151a; --surface:#171e25; --surface-2:#1c242c; --border:#2a343d;
-  --text:#e7ecef; --text-muted:#97a3ad; --text-faint:#616f79;
-  --blue:#5b9de3; --blue-soft:#3987e5; --orange:#e8935f; --orange-soft:#d95926;
-  --success:#6fcf97; --rail:#33404a; --band:#241f14; --current:#152522; --warnbg:#241f14; --warnborder:#c98500;
+  --bg:#141a1e; --surface:#1c242a; --surface-2:#222c33; --surface-3:#2a353d;
+  --border:#33414a; --border-strong:#465862;
+  --text:#e8eef0; --text-muted:#9aabb4; --text-faint:#6b7c86;
+  --accent:#5ec5bc; --accent-soft:#7ad6cd;
+  --warm:#e79055; --warm-soft:#f0a771;
+  --success:#6fcf97; --band:#2a2418; --current:#17322f;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
 }
+
 *{box-sizing:border-box}
-/* `hidden` must beat the display:flex/grid rules below it - otherwise a
-   toggled-off row (the calibration line, the live-import actions) keeps
-   rendering because its own class re-declares display. */
 [hidden]{display:none!important}
 html,body{margin:0;background:var(--bg)}
-body{color:var(--text);font-family:var(--sans);line-height:1.5;font-size:.92rem}
+/* No sideways scrolling, ever. A separately-scrolling sidebar is wanted; a
+   horizontal bar never is. */
+body{color:var(--text);font-family:var(--sans);line-height:1.5;font-size:.9rem;overflow-x:hidden}
 a{color:inherit}
 
-/* ---- layout shell ---- */
-.app{display:grid;grid-template-columns:300px minmax(0,1fr);gap:1.75rem;max-width:1360px;margin:0 auto;padding:1.75rem 1.5rem 5rem}
-@media (max-width:980px){.app{grid-template-columns:1fr;padding:1.5rem 1.1rem 5rem}}
+/* ---- shell: sized for 1440p at the default window width ---- */
+.app{display:grid;grid-template-columns:340px minmax(0,1fr);gap:1.5rem;
+     max-width:1680px;margin:0 auto;padding:1.5rem 1.5rem 4rem}
+@media (max-width:1100px){.app{grid-template-columns:1fr;padding:1.25rem 1rem 4rem}}
 
-.eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--blue-soft);margin-bottom:.4rem}
-h1{font-family:var(--display);font-weight:700;font-size:1.55rem;margin:0 0 .35rem;line-height:1.05;text-wrap:balance}
-.sub{color:var(--text-muted);font-size:.82rem;margin:0 0 1.1rem;line-height:1.45}
+.eyebrow{font-family:var(--mono);font-size:.63rem;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);margin-bottom:.3rem}
+h1{font-family:var(--display);font-weight:700;font-size:1.7rem;margin:0 0 .3rem;line-height:1;text-wrap:balance}
+.sub{color:var(--text-muted);font-size:.78rem;margin:0 0 1rem;line-height:1.45}
 
 /* ---- sidebar ---- */
-.sidebar-inner{display:flex;flex-direction:column;gap:1rem}
-@media (min-width:981px){.sidebar-inner{position:sticky;top:1.5rem;max-height:calc(100vh - 3rem);overflow-y:auto;padding-right:.3rem}}
+.sidebar-inner{display:flex;flex-direction:column;gap:.7rem}
+@media (min-width:1101px){
+  .sidebar-inner{position:sticky;top:1.25rem;max-height:calc(100vh - 2.5rem);
+    overflow-y:auto;overflow-x:hidden;padding-right:.45rem;scrollbar-width:thin}
+  .sidebar-inner::-webkit-scrollbar{width:8px}
+  .sidebar-inner::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:4px}
+}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;box-shadow:var(--shadow)}
 
-.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.95rem 1.1rem}
+.sec-label{font-family:var(--mono);font-size:.61rem;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--text-faint);display:flex;align-items:center;gap:.3rem;margin:0 0 .5rem}
+.sec-label .rule{flex:1;height:1px;background:var(--border)}
 
-.label-sm{font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-faint)}
+/* ---- compact, aligned inputs ---- */
+.fields{display:grid;grid-template-columns:1fr 5.6rem;align-items:center;gap:.3rem .5rem}
+.fields label{font-size:.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  display:flex;align-items:center;gap:.25rem;min-width:0}
+.fields input[type=number],.fields input[type=text]{
+  font-family:var(--mono);font-size:.8rem;font-weight:600;color:var(--text);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:5px;
+  padding:.22rem .35rem;width:100%;min-width:0;font-variant-numeric:tabular-nums;text-align:right}
+.fields input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.fields input:disabled{opacity:.45;cursor:not-allowed;background:var(--surface-3)}
+.checkrow{grid-column:1 / -1;display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--text-muted);cursor:pointer;user-select:none}
+.checkrow input{width:.85rem;height:.85rem;accent-color:var(--accent);margin:0;cursor:pointer}
+.note{grid-column:1 / -1;font-size:.68rem;color:var(--text-faint);line-height:1.35;margin:.2rem 0 0}
 
-.input-stack{display:flex;flex-direction:column;gap:.7rem}
-.field{display:flex;flex-direction:column;gap:.3rem}
-.field label{display:flex;align-items:center;gap:.3rem;font-family:var(--mono);font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-faint)}
-input[type=number],input[type=text]{font-family:var(--mono);font-size:1rem;font-weight:600;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:7px;padding:.45rem .6rem;width:100%;font-variant-numeric:tabular-nums}
-input[type=number]:focus,input[type=text]:focus{outline:2px solid var(--blue-soft);outline-offset:1px}
-.field-row{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
-.field-row-3{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
+/* ---- buttons, one family ---- */
+.btn{font-family:var(--sans);font-size:.72rem;font-weight:500;color:var(--text-muted);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
+  padding:.28rem .6rem;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s,color .12s}
+.btn:hover{border-color:var(--accent);color:var(--accent);background:var(--surface-3)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn:disabled:hover{border-color:var(--border);color:var(--text-muted);background:var(--surface-2)}
+.btn-primary{color:var(--surface);background:var(--accent);border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent-soft);border-color:var(--accent-soft);color:var(--surface)}
+.btnrow{display:flex;gap:.35rem;margin-top:.5rem}
+.btnrow .btn{flex:1}
 
-.btnrow{display:flex;gap:.5rem;margin-top:.2rem}
-.reset-btn,.more-btn{font-family:var(--mono);font-size:.72rem;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:100px;padding:.32rem .75rem;cursor:pointer;flex:1}
-.reset-btn:hover{border-color:var(--orange-soft);color:var(--orange-soft)}
-.more-btn{color:var(--blue-soft);border-color:var(--blue-soft)}
-.more-btn:hover{background:color-mix(in srgb, var(--blue-soft) 12%, transparent)}
-.more-btn:disabled{opacity:.4;cursor:default}
-.toggle-btn{display:block;width:100%;text-align:center;font-family:var(--mono);font-size:.72rem;color:var(--blue-soft);background:none;border:1px solid var(--blue-soft);border-radius:100px;padding:.32rem .75rem;cursor:pointer;margin-top:.8rem}
-.toggle-btn:hover{background:color-mix(in srgb, var(--blue-soft) 12%, transparent)}
-
-.result-card{padding-top:.85rem}
-.result-row-item{display:flex;justify-content:space-between;align-items:baseline;padding:.3rem 0;gap:.6rem}
-.result-row-item + .result-row-item{border-top:1px dashed var(--border)}
-.result-label{font-family:var(--mono)}
-.result-value{font-family:var(--display);font-size:1.3rem;font-weight:700;font-variant-numeric:tabular-nums;color:var(--orange-soft)}
-.result-value-sm{font-family:var(--mono);font-size:.85rem;font-weight:600;font-variant-numeric:tabular-nums;color:var(--blue-soft)}
-.result-value-sm.ok{color:var(--success)}
-.result-value-sm.off{color:var(--orange-soft)}
-
-.quicklinks{display:flex;flex-direction:column;gap:.15rem}
-.quicklinks a{font-family:var(--mono);font-size:.72rem;color:var(--text-muted);text-decoration:none;padding:.35rem .5rem;border-radius:6px}
-.quicklinks a:hover{color:var(--blue-soft);background:var(--surface-2)}
-
-.advanced-panel{margin-top:.9rem;padding-top:.9rem;border-top:1px solid var(--border)}
-.advanced-panel[hidden]{display:none}
-.adv-group{margin-bottom:1rem}
-.adv-group:last-child{margin-bottom:0}
-.adv-group h4{font-family:var(--sans);margin:0 0 .55rem;display:flex;align-items:center;gap:.35rem}
-.checkfield{display:flex;align-items:center;gap:.5rem;font-family:var(--sans);font-size:.84rem;color:var(--text);cursor:pointer;user-select:none}
-.checkfield input[type=checkbox]{width:1.05rem;height:1.05rem;accent-color:var(--blue-soft);cursor:pointer}
-.adv-note{font-size:.72rem;color:var(--text-faint);margin-top:.4rem;line-height:1.4}
+/* ---- results ---- */
+.result{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;padding:.22rem 0;font-size:.78rem}
+.result + .result{border-top:1px dashed var(--border)}
+.result .k{color:var(--text-muted)}
+.result .v{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+.result.hero .v{font-family:var(--display);font-size:1.5rem;font-weight:700;color:var(--warm);line-height:1}
+.result .v.good{color:var(--success)} .result .v.off{color:var(--warm)}
 
 /* ---- live import ---- */
-.live-card{border-left:3px solid var(--success)}
-.live-card.stale{border-left-color:var(--warnborder)}
-.live-card.absent{border-left-color:var(--rail)}
-.live-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem}
-.live-title{font-family:var(--mono);font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:var(--success);display:flex;align-items:center;gap:.35rem}
-.live-card.absent .live-title{color:var(--text-faint)}
-.live-when{font-family:var(--mono);font-size:.65rem;color:var(--text-faint)}
-.live-list{display:flex;flex-direction:column;gap:.18rem;margin-bottom:.6rem}
-.live-row{display:flex;justify-content:space-between;gap:.6rem;font-size:.75rem;padding:.12rem 0}
-.live-row .k{color:var(--text-muted)}
-.live-row .v{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
-.live-row .src{font-size:.62rem;color:var(--text-faint);font-family:var(--mono)}
-.live-empty{font-size:.75rem;color:var(--text-muted);line-height:1.45}
+.live{border-left:3px solid var(--border-strong)}
+.live.on{border-left-color:var(--success)}
+.live-head{display:flex;justify-content:space-between;align-items:center;gap:.4rem;margin-bottom:.4rem}
+.live-when{font-family:var(--mono);font-size:.62rem;color:var(--text-faint)}
+.live-list{display:grid;grid-template-columns:1fr auto;gap:.1rem .5rem;font-size:.72rem;margin-bottom:.4rem}
+.live-list .k{color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.live-list .v{font-family:var(--mono);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.live-empty{font-size:.72rem;color:var(--text-muted);line-height:1.45}
 
-/* ---- tooltip / info icon ---- */
-.tip{position:relative;border-bottom:1px dotted var(--text-faint);cursor:help}
-.bubble{position:absolute;left:50%;bottom:calc(100% + 7px);transform:translateX(-50%) translateY(3px);min-width:max-content;max-width:22rem;background:var(--text);color:var(--bg);font-family:var(--mono);font-size:.7rem;line-height:1.4;padding:.4rem .6rem;border-radius:6px;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .12s,transform .12s;z-index:20;white-space:normal}
-.bubble::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--text)}
-.tip:hover .bubble,.tip:focus .bubble,.tip:focus-within .bubble,
-.info-icon:hover .bubble,.info-icon:focus .bubble{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}
-.info-icon{position:relative;display:inline-flex;align-items:center;justify-content:center;width:1rem;height:1rem;border-radius:50%;border:1px solid var(--text-faint);color:var(--text-faint);font-family:var(--sans);font-size:.62rem;font-style:italic;font-weight:600;cursor:help;flex:none}
-.info-icon:hover,.info-icon:focus{border-color:var(--blue-soft);color:var(--blue-soft)}
+/* ---- tooltips: fixed-position, so a scroll container cannot clip them ---- */
+.tip{border-bottom:1px dotted var(--text-faint);cursor:help}
+.ico{display:inline-flex;align-items:center;justify-content:center;width:.85rem;height:.85rem;
+  border-radius:50%;border:1px solid var(--text-faint);color:var(--text-faint);
+  font-size:.55rem;font-weight:700;cursor:help;flex:none;font-style:normal}
+.ico:hover,.ico:focus{border-color:var(--accent);color:var(--accent);outline:none}
+#tip{position:fixed;z-index:200;max-width:22rem;background:var(--text);color:var(--surface);
+  font-family:var(--sans);font-size:.73rem;font-weight:400;line-height:1.45;
+  padding:.45rem .6rem;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.28);
+  opacity:0;visibility:hidden;transition:opacity .1s;pointer-events:none;left:0;top:0}
+#tip.on{opacity:1;visibility:visible}
 
-/* ---- collapsibles ---- */
-details.panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.95rem 1.1rem;margin-bottom:1.1rem}
-details.panel summary{cursor:pointer;font-family:var(--sans);font-weight:600;font-size:.86rem;color:var(--text);list-style:none;display:flex;align-items:center;gap:.45rem}
-details.panel summary::-webkit-details-marker{display:none}
-details.panel summary::before{content:'\25B8';font-family:var(--mono);color:var(--blue-soft);transition:transform .15s;font-size:.8rem}
-details.panel[open] summary::before{transform:rotate(90deg)}
-details.panel summary .sub{font-weight:400;color:var(--text-muted);font-size:.76rem;margin:0}
-.panel-body{margin-top:.8rem}
-
-/* condensed calc-steps ledger */
-.calc-ledger{position:relative;padding-left:1.65rem}
-.calc-ledger::before{content:"";position:absolute;left:.58rem;top:.5rem;bottom:.9rem;width:1px;background:var(--rail)}
-.calc-step{position:relative;margin-bottom:.55rem;display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;font-size:.82rem}
-.calc-step-n{position:absolute;left:-1.65rem;top:.05rem;width:1.15rem;height:1.15rem;border-radius:50%;background:var(--surface);border:1.5px solid var(--rail);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:600;font-size:.62rem;color:var(--text-muted)}
-.calc-step .step-label{color:var(--text);font-weight:600;flex:0 0 auto}
-.calc-step .step-expr{font-family:var(--mono);font-size:.72rem;color:var(--text-faint);flex:1 1 auto}
-.calc-step .step-val{font-family:var(--mono);font-weight:700;white-space:nowrap;margin-left:auto;color:var(--orange-soft)}
-.calc-step.final .step-val{color:var(--success);font-size:.92rem}
-
-.panel-body h4{font-family:var(--sans);font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-faint);margin:1rem 0 .45rem}
-.panel-body h4:first-child{margin-top:0}
-.panel-body ul{margin:0;padding-left:1.1rem;color:var(--text-muted);font-size:.8rem}
-.panel-body li{margin-bottom:.4rem}
-code{font-family:var(--mono);background:var(--surface-2);padding:.05rem .3rem;border-radius:4px;color:var(--text);font-size:.9em}
-
-/* ---- main sections ---- */
-h3.sec{font-family:var(--display);font-weight:700;font-size:1.25rem;margin:2rem 0 .25rem}
+/* ---- main ---- */
+h3.sec{font-family:var(--display);font-weight:700;font-size:1.25rem;margin:1.6rem 0 .2rem}
 h3.sec:first-child{margin-top:0}
-.sec-sub{color:var(--text-muted);font-size:.8rem;margin:0 0 .8rem;max-width:70ch}
+.sec-sub{color:var(--text-muted);font-size:.78rem;margin:0 0 .7rem;max-width:74ch}
 
-/* ---- verdict ---- */
-.verdict{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--orange-soft);border-radius:12px;padding:1rem 1.15rem;margin-bottom:1.2rem}
-.verdict-head{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin-bottom:.5rem}
-.verdict-kicker{font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint)}
-.verdict-answer{font-family:var(--display);font-weight:800;font-size:1.7rem;line-height:1;color:var(--orange-soft)}
-.verdict-answer.util{color:var(--blue-soft)}
-.verdict-body{font-size:.84rem;color:var(--text-muted);margin:0}
-.verdict-body strong{color:var(--text)}
-.verdict-body + .verdict-body{margin-top:.45rem}
+.verdict{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--warm);
+  border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;box-shadow:var(--shadow)}
+.verdict-head{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin-bottom:.4rem}
+.verdict-kicker{font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint)}
+.verdict-answer{font-family:var(--display);font-weight:800;font-size:1.6rem;line-height:1;color:var(--warm)}
+.verdict-answer.util{color:var(--accent)}
+.verdict p{font-size:.8rem;color:var(--text-muted);margin:0}
+.verdict p + p{margin-top:.35rem}
+.verdict strong{color:var(--text)}
 
-.compare{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:0 0 1.2rem}
-@media (max-width:640px){.compare{grid-template-columns:1fr}}
-.compare .box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.95rem 1.1rem}
-.compare .box.win{border-color:var(--success);box-shadow:inset 3px 0 0 var(--success)}
-.compare .box h5{margin:0 0 .3rem;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);display:flex;align-items:center;gap:.35rem}
-.compare .box .big{font-family:var(--display);font-size:1.6rem;color:var(--orange-soft);line-height:1.1}
-.compare .box .unit{font-family:var(--mono);font-size:.66rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em}
-.compare .box p{margin:.3rem 0 0;font-size:.78rem;color:var(--text-muted)}
-.compare .box dl{display:grid;grid-template-columns:auto 1fr;gap:.1rem .7rem;margin:.55rem 0 0;font-size:.74rem}
-.compare .box dt{color:var(--text-faint)}
-.compare .box dd{margin:0;font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:1rem}
+@media (max-width:820px){.compare{grid-template-columns:1fr}}
+.box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.75rem .9rem;box-shadow:var(--shadow)}
+.box.win{border-color:var(--success);box-shadow:inset 3px 0 0 var(--success),var(--shadow)}
+.box h5{margin:0 0 .2rem;font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);display:flex;align-items:center;gap:.35rem}
+.box .big{font-family:var(--display);font-size:1.5rem;color:var(--warm);line-height:1.05}
+.box .unit{font-family:var(--mono);font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em}
+.box dl{display:grid;grid-template-columns:auto 1fr;gap:.05rem .6rem;margin:.45rem 0 0;font-size:.72rem}
+.box dt{color:var(--text-faint)} .box dd{margin:0;font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.box p{margin:.35rem 0 0;font-size:.72rem;color:var(--text-muted)}
+.tag{font-family:var(--sans);font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid currentColor;border-radius:3px;padding:0 .22rem}
+.tag.win{color:var(--success)}
 
-/* ---- greedy plan strip ---- */
-.plan{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.95rem 1.1rem;margin-bottom:1.2rem}
-.plan h5{margin:0 0 .55rem;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint)}
-.plan-strip{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:.6rem}
-.plan-cell{width:1.55rem;height:1.55rem;border-radius:4px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.58rem;font-weight:600;color:#fff;position:relative}
-.plan-cell.c{background:var(--orange-soft)}
-.plan-cell.u{background:var(--blue-soft)}
-.plan-cell.flip{outline:2px solid var(--success);outline-offset:1px}
-.plan-legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.73rem;color:var(--text-muted);margin-bottom:.5rem}
-.plan-legend span{display:flex;align-items:center;gap:.35rem}
-.plan-note{font-size:.8rem;color:var(--text-muted);margin:0}
-.plan-note strong{color:var(--text)}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.75rem .9rem;margin-bottom:1rem;box-shadow:var(--shadow)}
+.panel h5{margin:0 0 .5rem;font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint)}
+.panel .note{font-size:.78rem;color:var(--text-muted);margin:.5rem 0 0}
+.panel .note strong{color:var(--text)}
 
-.tbl-wrap{overflow-x:auto;max-height:520px;overflow-y:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
-.tbl-wrap.short{max-height:none}
-table.roi{width:100%;border-collapse:collapse;font-size:.78rem}
-table.roi thead th{position:sticky;top:0;z-index:2;background:var(--surface-2);text-align:right;font-family:var(--mono);font-weight:500;font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-faint);padding:.45rem .55rem;border-bottom:1px solid var(--border);white-space:nowrap}
-table.roi thead tr.grp th{font-size:.6rem;letter-spacing:.08em;color:var(--text-muted);padding-bottom:.2rem;border-bottom:none}
+.strip{display:flex;gap:2px;flex-wrap:wrap;margin-bottom:.5rem}
+.cell{width:1.5rem;height:1.5rem;border-radius:4px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:.55rem;font-weight:600;color:#fff}
+.cell.c{background:var(--warm)} .cell.u{background:var(--accent)}
+.cell.flip{outline:2px solid var(--success);outline-offset:1px}
+.legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.7rem;color:var(--text-muted);margin-top:.4rem}
+.legend span{display:flex;align-items:center;gap:.3rem}
+.sw{width:.75rem;height:.75rem;border-radius:3px;border:1px solid var(--border);display:inline-block}
+
+/* ---- tables ---- */
+.tbl-wrap{overflow:auto;max-height:480px;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:var(--shadow)}
+.tbl-wrap.tall{max-height:calc(100vh - 11rem)}
+.tbl-wrap.auto{max-height:none}
+table.roi{width:100%;border-collapse:collapse;font-size:.75rem}
+table.roi thead th{position:sticky;background:var(--surface-2);text-align:right;font-family:var(--mono);
+  font-weight:500;font-size:.63rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-faint);
+  padding:.32rem .5rem;white-space:nowrap;z-index:2}
+table.roi thead tr.grp th{top:0;font-size:.58rem;letter-spacing:.09em;color:var(--text-muted);
+  border-bottom:1px solid var(--border);background:var(--surface-3)}
+table.roi thead tr.cols th{top:1.4rem;border-bottom:1px solid var(--border)}
 table.roi thead th:first-child{text-align:left}
-table.roi tbody td{text-align:right;padding:.32rem .55rem;font-family:var(--mono);font-variant-numeric:tabular-nums;border-top:1px solid var(--border);white-space:nowrap}
+table.roi tbody td{text-align:right;padding:.24rem .5rem;font-family:var(--mono);font-variant-numeric:tabular-nums;
+  border-top:1px solid var(--border);white-space:nowrap}
 table.roi tbody td.lvl{text-align:left;color:var(--text-muted)}
-table.roi tbody td.sep{border-left:1px solid var(--border)}
-table.roi thead th.sep{border-left:1px solid var(--border)}
-table.roi tbody td.wk{color:var(--text)}
+table.roi tbody td.sep,table.roi thead th.sep{border-left:1px solid var(--border)}
 table.roi tbody tr.boundary td{color:var(--success)}
 table.roi tbody tr.band{background:var(--band)}
 table.roi tbody tr.current{background:var(--current);font-weight:600}
-table.roi tbody tr.current td{border-top:2px solid var(--blue-soft);border-bottom:2px solid var(--blue-soft)}
-.tag{font-family:var(--sans);font-size:.58rem;letter-spacing:.06em;text-transform:uppercase;color:var(--blue-soft);border:1px solid currentColor;border-radius:3px;padding:0 .25rem;margin-left:.25rem}
-.tag.win{color:var(--success)}
-.legend{display:flex;gap:1.1rem;flex-wrap:wrap;margin-top:.6rem;font-size:.73rem;color:var(--text-muted)}
-.legend span{display:flex;align-items:center;gap:.35rem}
-.sw{width:.8rem;height:.8rem;border-radius:3px;border:1px solid var(--border);display:inline-block}
-.tblfoot{display:flex;justify-content:center;align-items:center;gap:.4rem;padding:.6rem 0;flex-wrap:wrap}
-.tblfoot .more-btn{flex:0 0 auto}
-.jump{display:flex;align-items:center;gap:.3rem}
-.jump input{width:5.5rem;font-size:.75rem;padding:.28rem .45rem;font-weight:500}
-.rowcount{font-family:var(--mono);font-size:.68rem;color:var(--text-faint)}
+table.roi tbody tr.current td{border-top:2px solid var(--accent);border-bottom:2px solid var(--accent)}
+.tblfoot{display:flex;justify-content:flex-end;align-items:center;gap:.35rem;padding:.45rem .1rem 0;flex-wrap:wrap}
+.tblfoot .count{margin-right:auto;font-family:var(--mono);font-size:.66rem;color:var(--text-faint)}
+.tblfoot input{font-family:var(--mono);font-size:.72rem;width:5rem;padding:.25rem .35rem;text-align:right;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text)}
 
-/* ---- back to top ---- */
-#backToTop{position:fixed;right:1.1rem;bottom:1.1rem;width:2.6rem;height:2.6rem;border-radius:50%;background:var(--surface);border:1px solid var(--border);color:var(--blue-soft);font-size:1.1rem;cursor:pointer;display:none;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.15);opacity:0;transition:opacity .2s;z-index:30}
-#backToTop.show{display:flex;opacity:.85}
-#backToTop:hover{opacity:1;border-color:var(--blue-soft)}
+details.panel summary{cursor:pointer;font-weight:600;font-size:.82rem;list-style:none;display:flex;align-items:center;gap:.4rem}
+details.panel summary::-webkit-details-marker{display:none}
+details.panel summary::before{content:'\25B8';font-family:var(--mono);color:var(--accent);transition:transform .15s;font-size:.75rem}
+details.panel[open] summary::before{transform:rotate(90deg)}
+details.panel summary .s{font-weight:400;color:var(--text-muted);font-size:.73rem}
+.panel-body{margin-top:.7rem}
+.panel-body h4{font-size:.63rem;letter-spacing:.05em;text-transform:uppercase;color:var(--text-faint);margin:.9rem 0 .35rem}
+.panel-body h4:first-child{margin-top:0}
+.panel-body ul{margin:0;padding-left:1rem;color:var(--text-muted);font-size:.77rem}
+.panel-body li{margin-bottom:.3rem}
+code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;border-radius:3px;color:var(--text);font-size:.9em}
+
+.calc{position:relative;padding-left:1.5rem}
+.calc::before{content:"";position:absolute;left:.52rem;top:.4rem;bottom:.8rem;width:1px;background:var(--border-strong)}
+.step{position:relative;margin-bottom:.45rem;display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;font-size:.78rem}
+.step-n{position:absolute;left:-1.5rem;top:.05rem;width:1.05rem;height:1.05rem;border-radius:50%;
+  background:var(--surface);border:1.5px solid var(--border-strong);display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:600;font-size:.58rem;color:var(--text-muted)}
+.step .l{color:var(--text);font-weight:600}
+.step .e{font-family:var(--mono);font-size:.68rem;color:var(--text-faint);flex:1 1 auto}
+.step .v{font-family:var(--mono);font-weight:700;margin-left:auto;color:var(--warm);white-space:nowrap}
+.step.final .v{color:var(--success);font-size:.88rem}
+
+#theme{position:fixed;right:.9rem;bottom:.9rem;width:2.2rem;height:2.2rem;border-radius:50%;
+  background:var(--surface);border:1px solid var(--border);color:var(--text-muted);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:.9rem;box-shadow:var(--shadow);z-index:60}
+#theme:hover{color:var(--accent);border-color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
 <div class="app">
-  <aside class="sidebar">
+  <aside>
     <div class="sidebar-inner">
       <div>
         <div class="eyebrow">Combat vs Utility pet slot</div>
         <h1>Party Gold ROI</h1>
-        <p class="sub">Every multiplier that reaches your party-action gold, in the order it applies &mdash; and which pet slot is the better buy right now.</p>
+        <p class="sub">Every multiplier that reaches your party-action gold, and which pet slot is the better buy right now.</p>
       </div>
 
-      <div class="card live-card absent" id="liveCard">
+      <div class="card live" id="liveCard">
         <div class="live-head">
-          <span class="live-title">Live import<span class="info-icon" tabindex="0">i<span class="bubble">Filled in by the Apoz Core userscript when you open this page from the in-game menu. Nothing is sent anywhere &mdash; the values are handed over in-page.</span></span></span>
+          <span class="sec-label" style="margin:0">Live import<span class="ico" tabindex="0" data-tip="Filled in by the Apoz Core userscript when you open this page from the in-game menu. Nothing is sent anywhere - the values are handed over in-page.">i</span></span>
           <span class="live-when" id="liveWhen"></span>
         </div>
         <div class="live-list" id="liveList"></div>
-        <div class="live-empty" id="liveEmpty">Not opened from the game. Open <strong>Apoz Core &rsaquo; Tools &rsaquo; Party Gold ROI</strong> inside Queslar and your slot levels, character level and party are filled in automatically.</div>
+        <div class="live-empty" id="liveEmpty">Not opened from the game. Open <strong>Apoz Core &rsaquo; Tools &rsaquo; Party Gold ROI</strong> inside Queslar to fill this in automatically.</div>
         <div class="btnrow" id="liveActions" hidden>
-          <button type="button" class="more-btn" id="liveApplyBtn">Apply live values</button>
+          <button type="button" class="btn btn-primary" id="liveApplyBtn">Apply live values</button>
         </div>
       </div>
 
       <div class="card">
-        <div class="input-stack">
-          <div class="field">
-            <label for="combatInput">Combat pet slot level</label>
-            <input type="number" id="combatInput" min="0" max="5000" value="50">
-          </div>
-          <div class="field">
-            <label for="utilityInput">Utility pet slot level</label>
-            <input type="number" id="utilityInput" min="0" max="5000" value="30">
-          </div>
+        <div class="sec-label">Pet slots<span class="rule"></span></div>
+        <div class="fields">
+          <label for="combatInput">Combat slot level</label>
+          <input type="number" id="combatInput" min="0" max="5000" value="50">
+          <label for="utilityInput">Utility slot level</label>
+          <input type="number" id="utilityInput" min="0" max="5000" value="30">
         </div>
-
+        <div style="margin-top:.55rem">
+          <div class="result hero"><span class="k">Gold / action</span><span class="v" id="headlineGold">&mdash;</span></div>
+          <div class="result" id="keptRow" hidden><span class="k">After village tax</span><span class="v" id="keptGold">&mdash;</span></div>
+          <div class="result"><span class="k">Combat boost</span><span class="v" id="combatBoostOut">&mdash;</span></div>
+          <div class="result"><span class="k">Utility boost</span><span class="v" id="utilityBoostOut">&mdash;</span></div>
+          <div class="result" id="calibRow" hidden><span class="k tip" data-tip="Difference between this model and the gold/action you actually measured in game. Set it under Calibration.">vs observed</span><span class="v" id="calibOut">&mdash;</span></div>
+        </div>
         <div class="btnrow">
-          <button type="button" class="reset-btn" id="resetBtn">Reset</button>
-          <button type="button" class="more-btn" id="saveDefaultBtn">Save as default</button>
-        </div>
-
-        <div class="result-card">
-          <div class="result-row-item">
-            <span class="result-label label-sm tip">Gold / action<span class="bubble">gold.base &times; level multiplier &times; party gold multiplier</span></span>
-            <span class="result-value" id="headlineGold">&mdash;</span>
-          </div>
-          <div class="result-row-item">
-            <span class="result-label label-sm">Combat slot boost</span>
-            <span class="result-value-sm" id="combatBoostOut">&mdash;</span>
-          </div>
-          <div class="result-row-item">
-            <span class="result-label label-sm">Utility slot boost</span>
-            <span class="result-value-sm" id="utilityBoostOut">&mdash;</span>
-          </div>
-          <div class="result-row-item" id="calibRow" hidden>
-            <span class="result-label label-sm tip">vs observed<span class="bubble">Difference between this model and the gold/action you actually measured in game. Set it under More inputs &rsaquo; Calibration.</span></span>
-            <span class="result-value-sm" id="calibOut">&mdash;</span>
-          </div>
-        </div>
-
-        <button type="button" class="toggle-btn" id="toggleAdvanced">More inputs</button>
-        <div class="advanced-panel" id="advancedPanel" hidden>
-
-          <div class="adv-group">
-            <h4 class="label-sm">Personal Gold Boost <span style="text-transform:none;letter-spacing:0;font-weight:400">(per member, pre-pool)</span></h4>
-            <div class="field-row">
-              <div class="field"><label for="enchantsInput">Enchants %</label><input type="number" id="enchantsInput" min="0" max="100000" value="518"></div>
-              <div class="field"><label for="sculpturesInput">Sculpture grid %</label><input type="number" id="sculpturesInput" min="0" max="100000" value="500"></div>
-            </div>
-            <div class="field-row" style="margin-top:.6rem">
-              <div class="field"><label for="skillTreeInput">Skill tree %</label><input type="number" id="skillTreeInput" min="0" max="100000" value="0"></div>
-              <div class="field"><label for="petGoldModInput">Pet "Gold" mod %</label><input type="number" id="petGoldModInput" min="0" max="100000" value="0"></div>
-            </div>
-            <p class="adv-note">These four plus Village below are the additive <em>Base</em> category on your Character &rsaquo; Boosts &ldquo;Gold Boost&rdquo; card. Two used to be hardcoded at 0 &mdash; if your card reads higher than this model's step&nbsp;1, they are where the difference lives.</p>
-          </div>
-
-          <div class="adv-group">
-            <h4 class="label-sm">Village</h4>
-            <div class="field-row">
-              <div class="field"><label for="marketInput">Market %</label><input type="number" id="marketInput" min="0" max="100000" value="320"></div>
-              <div class="field"><label for="villageInput">Exploration/Potent %</label><input type="number" id="villageInput" min="0" max="10000" value="40"></div>
-            </div>
-            <p class="adv-note">One shared field for Exploration + Potent &mdash; both feed different boosts but cluster near the same value on a normalized profile.</p>
-          </div>
-
-          <div class="adv-group">
-            <h4 class="label-sm">PvP tiles <span style="text-transform:none;letter-spacing:0;font-weight:400">(Village map)</span></h4>
-            <div class="field-row">
-              <div class="field"><label for="pvpGoldTileInput">Gold Tile %</label><input type="number" id="pvpGoldTileInput" min="0" max="10000" value="20"></div>
-              <div class="field"><label for="pvpPotionTileInput">Potion Tile %</label><input type="number" id="pvpPotionTileInput" min="0" max="10000" value="4"></div>
-            </div>
-          </div>
-
-          <div class="adv-group">
-            <h4 class="label-sm">Party<span class="info-icon" tabindex="0">i<span class="bubble">Pooled Base is the SUM of every member's own fully-stacked Gold Boost, not an average. At exactly 5 members the combined total takes a &times;0.8 penalty (1-4 members: no penalty).</span></span></h4>
-            <div class="field-row">
-              <div class="field"><label for="partyMembersInput">Members</label><input type="number" id="partyMembersInput" min="1" max="5" value="4"></div>
-              <div class="field"><label for="othersGoldBoostInput">Others' Gold Boost %</label><input type="number" id="othersGoldBoostInput" min="0" max="1000000" value="0"></div>
-            </div>
-            <label class="checkfield" style="margin-top:.55rem"><input type="checkbox" id="othersSameInput" checked><span>Other members match me</span></label>
-            <p class="adv-note" id="partyNote" hidden></p>
-            <p class="adv-note">Untick to use the &ldquo;Others' Gold Boost %&rdquo; figure for each of the other members (their own Gold Boost card value, averaged). Assuming everyone matches you is the single biggest reason a modelled gold/action drifts from the real one.</p>
-          </div>
-
-          <div class="adv-group">
-            <h4 class="label-sm">Premium &amp; Event</h4>
-            <label class="checkfield"><input type="checkbox" id="vipInput" checked><span>VIP active (+10%)</span></label>
-            <div class="field-row" style="margin-top:.6rem">
-              <div class="field"><label for="goldPotionInput">Gold potion base %</label><input type="number" id="goldPotionInput" min="0" max="10000" value="10"></div>
-              <div class="field"><label for="eventInput">Event %</label><input type="number" id="eventInput" min="0" max="100000" value="0"></div>
-            </div>
-            <p class="adv-note">Premium (VIP + amplified gold potion) applies after party pooling and is personal to you. Event is its own multiplicative category &mdash; zero unless an event is live.</p>
-          </div>
-
-          <div class="adv-group">
-            <h4 class="label-sm">Combat context</h4>
-            <div class="field"><label for="monsterLevelInput">Monster level</label><input type="number" id="monsterLevelInput" min="1" max="10000000" value="230000"></div>
-            <div class="field" style="margin-top:.6rem"><label for="characterLevelInput">Character level</label><input type="number" id="characterLevelInput" min="1" max="1000000" value="11500"></div>
-            <div class="field" style="margin-top:.6rem"><label for="actionsPerWeekInput">Actions / week</label><input type="number" id="actionsPerWeekInput" min="1" max="200000" value="6000"></div>
-          </div>
-
-          <div class="adv-group">
-            <h4 class="label-sm">Pet roll <span style="text-transform:none;letter-spacing:0;font-weight:400">(shared, both pets)</span></h4>
-            <div class="field-row-3">
-              <div class="field"><label for="petILevelInput">iLevel</label><input type="number" id="petILevelInput" min="101" max="10000000" value="11000"></div>
-              <div class="field"><label for="petTierInput">Tier</label><input type="number" id="petTierInput" min="1" max="16" value="16"></div>
-              <div class="field"><label for="petRollPercentileInput">Roll %</label><input type="number" id="petRollPercentileInput" min="0" max="100" value="75"></div>
-            </div>
-            <p class="adv-note">Tier sets the tierMultiplier (T1=1.10&times; up to T16=3.30&times;). Roll percentile picks where in the &plusmn;3% roll band to assume.</p>
-          </div>
-
-          <div class="adv-group">
-            <h4 class="label-sm">Monster gold from elsewhere<span class="info-icon" tabindex="0">i<span class="bubble">monsterGoldFlat / monsterGoldPercentage are MERGED multipliers &mdash; the pet is usually the biggest contributor but rarely the only one. Anything not coming from this pet goes here, where the slot-level sweep correctly leaves it alone.</span></span></h4>
-            <div class="field-row">
-              <div class="field"><label for="otherGoldFlatInput">Added base gold</label><input type="number" id="otherGoldFlatInput" min="0" max="1000" step="0.01" value="0"></div>
-              <div class="field"><label for="otherGoldPctInput">Increased base gold %</label><input type="number" id="otherGoldPctInput" min="0" max="100000" step="0.1" value="0"></div>
-            </div>
-            <p class="adv-note">Non-pet sources only (equipment, relics, implicits &hellip;). Leave at 0 if the pet is your only source. <strong>If the model reads low by a stable amount at every slot level, this is the first place to look</strong> &mdash; the pet slot boost does not scale these, so a missing chunk here shows up as a constant offset rather than a percentage one.</p>
-          </div>
-
-          <div class="adv-group">
-            <h4 class="label-sm">Calibration<span class="info-icon" tabindex="0">i<span class="bubble">Enter the gold/action you actually see in game. The sidebar then shows the gap, and the Formulas panel lists which unexposed term could account for it.</span></span></h4>
-            <div class="field"><label for="observedGoldInput">Observed gold / action (B)</label><input type="number" id="observedGoldInput" min="0" max="1000000000" step="0.001" value="0"></div>
-            <p class="adv-note">0 = off. A stable percentage gap points at a missing multiplier (party members' real boosts, event, skill tree); a stable absolute gap points at the monster level or the flat term.</p>
-          </div>
-
+          <button type="button" class="btn" id="resetBtn">Reset</button>
+          <button type="button" class="btn" id="saveDefaultBtn">Save as default</button>
         </div>
       </div>
 
-      <nav class="quicklinks">
-        <a href="#verdict">Which to buy next</a>
-        <a href="#breakpoint">Breakpoint comparison</a>
-        <a href="#combat-table">Combat ROI table</a>
-        <a href="#utility-table">Utility ROI table</a>
-        <a href="#steps">Calculation steps</a>
-        <a href="#notes">Formulas &amp; notes</a>
-      </nav>
+      <div class="card">
+        <div class="sec-label">Combat context<span class="rule"></span><span class="ico" tabindex="0" data-tip="The values that change most often between sessions, so they sit near the top. Monster level multiplies gold.base linearly.">i</span></div>
+        <div class="fields">
+          <label for="monsterLevelInput">Monster level</label>
+          <input type="number" id="monsterLevelInput" min="1" max="10000000" value="230000">
+          <label for="characterLevelInput">Character level</label>
+          <input type="number" id="characterLevelInput" min="1" max="1000000" value="11500">
+          <label for="actionsPerWeekInput">Actions / week</label>
+          <input type="number" id="actionsPerWeekInput" min="1" max="200000" value="6000">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sec-label">Pet modifiers<span class="rule"></span><span class="ico" tabindex="0" data-tip="If the userscript imported your pets' actual rolled modifiers, those are used and the normalisation inputs grey out. Untick to model a pet from iLevel / tier / roll instead.">i</span></div>
+        <div class="fields">
+          <label class="checkrow"><input type="checkbox" id="useLivePetInput"><span>Use imported pet modifiers</span></label>
+          <label for="petILevelInput">Pet iLevel</label>
+          <input type="number" id="petILevelInput" min="101" max="10000000" value="11000">
+          <label for="petTierInput">Tier</label>
+          <input type="number" id="petTierInput" min="1" max="16" value="16">
+          <label for="petRollPercentileInput">Roll percentile</label>
+          <input type="number" id="petRollPercentileInput" min="0" max="100" value="75">
+        </div>
+        <div style="margin-top:.45rem">
+          <div class="result"><span class="k">Added base gold</span><span class="v" id="rollFlatOut">&mdash;</span></div>
+          <div class="result"><span class="k">Increased base gold</span><span class="v" id="rollPctOut">&mdash;</span></div>
+          <div class="result"><span class="k">Potion effect</span><span class="v" id="rollPotionOut">&mdash;</span></div>
+        </div>
+        <p class="note" id="petSourceNote"></p>
+      </div>
+
+      <div class="card">
+        <div class="sec-label">Character boosts<span class="rule"></span></div>
+        <div class="fields">
+          <label for="enchantsInput">Enchants %</label>
+          <input type="number" id="enchantsInput" min="0" max="100000" value="518">
+          <label for="sculpturesInput">Sculpture grid %</label>
+          <input type="number" id="sculpturesInput" min="0" max="100000" value="500">
+          <label for="skillTreeInput">Skill tree %</label>
+          <input type="number" id="skillTreeInput" min="0" max="100000" value="0">
+          <label for="petGoldModInput">Pet &quot;Gold&quot; mod %</label>
+          <input type="number" id="petGoldModInput" min="0" max="100000" value="0">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sec-label">Village<span class="rule"></span></div>
+        <div class="fields">
+          <label for="marketInput">Market %</label>
+          <input type="number" id="marketInput" min="0" max="100000" value="320">
+          <label for="villageInput">Exploration / Potent %</label>
+          <input type="number" id="villageInput" min="0" max="10000" value="40">
+          <label for="pvpGoldTileInput">PvP gold tile %</label>
+          <input type="number" id="pvpGoldTileInput" min="0" max="10000" value="20">
+          <label for="pvpPotionTileInput">PvP potion tile %</label>
+          <input type="number" id="pvpPotionTileInput" min="0" max="10000" value="4">
+          <label for="taxInput">Tax %<span class="ico" tabindex="0" data-tip="Taken from party-action gold before you keep it. The game shows BOTH: a pre-tax gold-gained figure and the amount KEPT after tax. Set this and the sidebar shows both too, so you always compare like with like. Not a recorded fact in the core, so it starts at 0 and you enter your party's rate.">i</span></label>
+          <input type="number" id="taxInput" min="0" max="100" step="0.1" value="0">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sec-label">Party<span class="rule"></span><span class="ico" tabindex="0" data-tip="Pooled Base is the SUM of every member's own fully-stacked Gold Boost, not an average. At exactly 5 members the combined total takes a x0.8 penalty; 1-4 members take none.">i</span></div>
+        <div class="fields">
+          <label for="partyMembersInput">Members</label>
+          <input type="number" id="partyMembersInput" min="1" max="5" value="4">
+          <label class="checkrow"><input type="checkbox" id="othersSameInput" checked><span>Others match me</span></label>
+          <label for="othersGoldBoostInput">Others' boost %</label>
+          <input type="number" id="othersGoldBoostInput" min="0" max="1000000" value="0">
+          <p class="note" id="partyNote" hidden></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sec-label">Premium &amp; event<span class="rule"></span></div>
+        <div class="fields">
+          <label class="checkrow"><input type="checkbox" id="vipInput" checked><span>VIP active (+10%)</span></label>
+          <label for="goldPotionInput">Gold potion base %</label>
+          <input type="number" id="goldPotionInput" min="0" max="10000" value="10">
+          <label for="eventInput">Event %</label>
+          <input type="number" id="eventInput" min="0" max="100000" value="0">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sec-label">Calibration<span class="rule"></span><span class="ico" tabindex="0" data-tip="Enter the gold/action you actually see in game. The sidebar shows the gap; the Formulas panel lists what each shape of gap points at.">i</span></div>
+        <div class="fields">
+          <label for="observedGoldInput">Observed / action (B)</label>
+          <input type="number" id="observedGoldInput" min="0" max="1000000000" step="0.001" value="0">
+          <p class="note">0 = off. Compared against the after-tax figure &mdash; the gold you actually keep, which is the honest measure of income.</p>
+        </div>
+      </div>
     </div>
   </aside>
 
-  <main class="main">
-
+  <main>
     <div class="verdict" id="verdict">
       <div class="verdict-head">
         <span class="verdict-kicker">Buy next</span>
         <span class="verdict-answer" id="verdictAnswer">&mdash;</span>
       </div>
-      <p class="verdict-body" id="verdictWhy">&mdash;</p>
-      <p class="verdict-body" id="verdictBreak">&mdash;</p>
+      <p id="verdictWhy">&mdash;</p>
+      <p id="verdictBreak">&mdash;</p>
     </div>
 
     <h3 class="sec" id="breakpoint">Breakpoint comparison</h3>
-    <p class="sec-sub">Both slots share the <em>identical</em> cost curve <code>floor(500,000 &times; L&sup3;)</code> keyed on their own next level, so the only fair comparison is gold/action gained per gold spent. Whichever number is bigger is the correct next purchase.</p>
+    <p class="sec-sub">Both slots share the <em>identical</em> cost curve <code>floor(500,000 &times; L&sup3;)</code> keyed on their own next level, so the only fair comparison is gold/action gained per gold spent.</p>
 
     <div class="compare">
       <div class="box" id="combatBox">
@@ -408,108 +402,105 @@ table.roi tbody tr.current td{border-top:2px solid var(--blue-soft);border-botto
       </div>
     </div>
 
-    <div class="plan">
+    <div class="panel">
       <h5>Where the two slots break even</h5>
-      <div class="tbl-wrap short"><table class="roi" id="crossTable">
+      <div class="tbl-wrap auto"><table class="roi">
         <thead>
-          <tr><th>If combat slot is</th><th>Utility is worth buying up to</th><th>Utility boost there</th><th>Cost of that utility level</th><th>Cost of the combat level</th></tr>
+          <tr class="cols"><th>If combat slot is</th><th>Utility worth buying up to</th><th>Utility boost there</th><th>Cost of that utility level</th><th>Cost of the combat level</th></tr>
         </thead>
         <tbody id="crossTbody"></tbody>
       </table></div>
-      <p class="plan-note" style="margin-top:.6rem">Read a row as: <strong>at that combat slot level, every utility level up to the second column returns more gold per gold spent than the next combat level does</strong> &mdash; past it, combat wins and stays winning. The utility column climbs in steps because a pet slot's rate steps up every 30 levels, so a utility level just past a 30-boundary can briefly out-earn combat again.</p>
+      <p class="note">Read a row as: <strong>at that combat level, every utility level up to the second column returns more gold per gold spent than the next combat level does</strong>. The column climbs in steps because a slot's rate steps up every 30 levels, so a utility level just past a boundary can briefly out-earn combat again.</p>
     </div>
 
-    <div class="plan">
+    <div class="panel">
       <h5>Next 24 purchases, buying the better slot each time</h5>
-      <div class="plan-strip" id="planStrip"></div>
-      <div class="plan-legend">
-        <span><i class="sw" style="background:var(--orange-soft);border:none"></i> combat</span>
-        <span><i class="sw" style="background:var(--blue-soft);border:none"></i> utility</span>
+      <div class="strip" id="planStrip"></div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--warm);border:none"></i> combat</span>
+        <span><i class="sw" style="background:var(--accent);border:none"></i> utility</span>
         <span><i class="sw" style="background:var(--surface);border-color:var(--success)"></i> the flip</span>
       </div>
-      <p class="plan-note" id="planNote">&mdash;</p>
+      <p class="note" id="planNote">&mdash;</p>
     </div>
 
     <h3 class="sec" id="combat-table">Combat pet slot ROI</h3>
     <p class="sec-sub">Utility pet held at your current input. Cumulative measured from your current combat slot level.</p>
-    <div class="tbl-wrap"><table class="roi" id="combatTable">
+    <div class="tbl-wrap" id="combatWrap"><table class="roi">
       <thead>
         <tr class="grp"><th colspan="4"></th><th colspan="2">this level alone</th><th colspan="3" class="sep">cumulative from current</th></tr>
-        <tr><th>Slot</th><th>Boost</th><th>Gold / action</th><th>Level cost</th><th>Payback (actions)</th><th>Weeks</th><th class="sep">Total cost</th><th>Payback (actions)</th><th>Weeks</th></tr>
+        <tr class="cols"><th>Slot</th><th>Boost</th><th>Gold / action</th><th>Level cost</th><th>Payback (actions)</th><th>Weeks</th><th class="sep">Total cost</th><th>Payback (actions)</th><th>Weeks</th></tr>
       </thead>
       <tbody id="combatTbody"></tbody>
     </table></div>
     <div class="tblfoot">
-      <span class="rowcount" id="combatRowCount"></span>
-      <button type="button" class="more-btn" id="combatMoreBtn">+60 levels</button>
-      <button type="button" class="more-btn" id="combatMore500Btn">+500</button>
-      <span class="jump"><input type="number" id="combatJumpInput" min="0" max="5000" placeholder="to level"><button type="button" class="more-btn" id="combatJumpBtn">Go</button></span>
+      <span class="count" id="combatRowCount"></span>
+      <button type="button" class="btn" id="combatExpandBtn">Expand</button>
+      <button type="button" class="btn" id="combatMoreBtn">+30</button>
+      <input type="number" id="combatJumpInput" min="0" max="5000" placeholder="to level">
+      <button type="button" class="btn" id="combatJumpBtn">Go</button>
     </div>
 
     <h3 class="sec" id="utility-table">Utility pet slot ROI</h3>
-    <p class="sec-sub">Combat pet held at your current input. Only Potion Effect% changes with this pet's slot &mdash; same cost curve, much weaker leverage on gold/action.</p>
-    <div class="tbl-wrap"><table class="roi" id="utilityTable">
+    <p class="sec-sub">Combat pet held at your current input. Only Potion Effect% changes with this slot &mdash; same cost curve, much weaker leverage.</p>
+    <div class="tbl-wrap" id="utilityWrap"><table class="roi">
       <thead>
         <tr class="grp"><th colspan="4"></th><th colspan="2">this level alone</th><th colspan="3" class="sep">cumulative from current</th></tr>
-        <tr><th>Slot</th><th>Boost</th><th>Gold / action</th><th>Level cost</th><th>Payback (actions)</th><th>Weeks</th><th class="sep">Total cost</th><th>Payback (actions)</th><th>Weeks</th></tr>
+        <tr class="cols"><th>Slot</th><th>Boost</th><th>Gold / action</th><th>Level cost</th><th>Payback (actions)</th><th>Weeks</th><th class="sep">Total cost</th><th>Payback (actions)</th><th>Weeks</th></tr>
       </thead>
       <tbody id="utilityTbody"></tbody>
     </table></div>
     <div class="tblfoot">
-      <span class="rowcount" id="utilityRowCount"></span>
-      <button type="button" class="more-btn" id="utilityMoreBtn">+60 levels</button>
-      <button type="button" class="more-btn" id="utilityMore500Btn">+500</button>
-      <span class="jump"><input type="number" id="utilityJumpInput" min="0" max="5000" placeholder="to level"><button type="button" class="more-btn" id="utilityJumpBtn">Go</button></span>
+      <span class="count" id="utilityRowCount"></span>
+      <button type="button" class="btn" id="utilityExpandBtn">Expand</button>
+      <button type="button" class="btn" id="utilityMoreBtn">+30</button>
+      <input type="number" id="utilityJumpInput" min="0" max="5000" placeholder="to level">
+      <button type="button" class="btn" id="utilityJumpBtn">Go</button>
     </div>
 
-    <div class="legend" style="margin-bottom:2rem">
+    <div class="legend" style="margin:.6rem 0 1.5rem">
       <span><i class="sw" style="background:var(--current)"></i> your current slot level</span>
-      <span><i class="sw" style="background:var(--band)"></i> this level pays back in 2&ndash;4 weeks</span>
-      <span><i class="sw" style="background:var(--surface);border-color:var(--success)"></i> <span style="color:var(--success)">green</span> = block boundary (31/61/91) &mdash; rate steps up, cost barely moves</span>
+      <span><i class="sw" style="background:var(--band)"></i> pays back in 2&ndash;4 weeks</span>
+      <span><i class="sw" style="background:var(--surface);border-color:var(--success)"></i> <span style="color:var(--success)">green</span> = block boundary (31/61/91), rate steps up</span>
     </div>
 
     <details class="panel" id="steps">
-      <summary>Calculation steps <span class="sub">&mdash; how gold/action was derived, in order</span></summary>
-      <div class="panel-body">
-        <div class="calc-ledger" id="ledger"></div>
-      </div>
+      <summary>Calculation steps <span class="s">&mdash; how gold/action was derived, in order</span></summary>
+      <div class="panel-body"><div class="calc" id="ledger"></div></div>
     </details>
 
     <details class="panel" id="notes">
-      <summary>Formulas &amp; notes <span class="sub">&mdash; assumptions, fixed values, sources</span></summary>
+      <summary>Formulas &amp; notes <span class="s">&mdash; assumptions, sources, where a gap comes from</span></summary>
       <div class="panel-body">
         <h4>Where a gap between this model and your real gold/action comes from</h4>
         <ul>
-          <li><strong>Party members' own boosts.</strong> Pooled Base is the <em>sum</em> of every member's fully-stacked Gold Boost. If they are not clones of you, tick off &ldquo;Other members match me&rdquo; and enter their real average. This is usually the largest single source of drift.</li>
-          <li><strong>Party size.</strong> At exactly 5 members the combined total is multiplied by 0.8; 1&ndash;4 members take no penalty. Set Members correctly.</li>
-          <li><strong>Categories that used to be pinned at 0</strong> and are now editable: Skill-tree Gold, the pets' own separate &ldquo;Gold&rdquo; modifier, Event, and the gold potion's base value.</li>
-          <li><strong>Monster gold from non-pet sources.</strong> <code>monsterGoldFlat</code> and <code>monsterGoldPercentage</code> are merged multipliers; this page derives the pet's share from your roll inputs and assumes nothing else contributes. If something does, enter it under &ldquo;Monster gold from elsewhere&rdquo;. A gap that stays the same size at every slot level points here.</li>
-          <li><strong>Monster level</strong> multiplies <code>gold.base</code> linearly, so a stale monster level moves the answer proportionally, not by a fixed amount.</li>
-          <li>Use the Calibration field to make the gap explicit. A stable <em>percentage</em> gap is a missing multiplier; a stable <em>absolute</em> gap points at the base terms.</li>
+          <li><strong>Compare the same figure.</strong> The game shows gold two ways &mdash; the pre-tax amount gained, and the amount <em>kept</em> after village tax. Both are correct; they are just not the same number. Set Tax% and this page shows both, so a mismatch is a real mismatch rather than a units problem. Tax is not a recorded fact in the core, so it defaults to 0.</li>
+          <li><strong>Party members' own boosts.</strong> Pooled Base is the <em>sum</em> of every member's fully-stacked Gold Boost. If they are not clones of you, untick &ldquo;Others match me&rdquo;. Usually the largest single source of drift.</li>
+          <li><strong>Party size.</strong> At exactly 5 members the combined total is multiplied by 0.8; 1&ndash;4 take no penalty.</li>
+          <li><strong>Categories once pinned at 0</strong> and editable now: skill-tree gold, the pets' own &ldquo;Gold&rdquo; modifier, event, and the gold potion's base value.</li>
+          <li>A stable <em>percentage</em> gap is a missing multiplier; a stable <em>absolute</em> gap points at the base terms or the monster level.</li>
         </ul>
         <h4>Assumptions</h4>
         <ul>
-          <li><strong>Level costs are cumulative to reach a level, individual to buy one.</strong> Each level has its own price &mdash; <code>floor(500,000 &times; L&sup3;)</code> for the level you're buying into. The ROI tables' "cumulative" columns sum every level's price from your current slot up to that row.</li>
-          <li><strong>Use the per-level column to decide where to stop.</strong> It's the correct marginal-decision rule &mdash; keep buying while the level in front of you clears your bar. Cumulative is the budgeting view: "what's the total damage to reach level N from here."</li>
-          <li>Both pet slot upgrades share the identical cost formula (confirmed: the same client component drives all three pet types &mdash; combat/utility/gathering), and the identical 30-level accelerating boost curve.</li>
-          <li>Pet iLevel/tier/roll-percentile are shared by both pets (one roll-strength profile, two independent slot levels).</li>
-          <li>Village tax ignored per instruction; all figures are pre-tax.</li>
-          <li>Every field is remembered in this browser only. "Save as default" stores your current numbers as the new baseline; "Reset" restores whatever you last saved (or this normalized profile, if you haven't saved one yet).</li>
+          <li><strong>Level costs are cumulative to reach a level, individual to buy one.</strong> Each level has its own price &mdash; <code>floor(500,000 &times; L&sup3;)</code> for the level you are buying into.</li>
+          <li><strong>Use the per-level column to decide where to stop.</strong> It is the correct marginal rule; cumulative is the budgeting view.</li>
+          <li>Both pet slots share the identical cost formula and the identical 30-level accelerating boost curve.</li>
+          <li>Every field is remembered in this browser only.</li>
         </ul>
         <h4>Generated from the core, not retyped here</h4>
         <ul id="provenanceList"></ul>
         <h4>Why the utility pet is so much weaker</h4>
         <ul>
-          <li>The combat pet's slot level multiplies <strong>monsterGoldFlat / monsterGoldPercentage directly</strong> &mdash; the dominant term in <code>gold.base</code>, which then gets multiplied again by the party multiplier. Every point of combat slot boost compounds through the whole chain.</li>
-          <li>The utility pet's slot level only boosts its own <strong>raw Potion Effect roll</strong> &mdash; one additive term inside Potion Effect's Base, which then feeds a small Premium sub-term (Gold Potion) dwarfed by the pooled party Base it multiplies against. The signal is diluted at every layer before it reaches gold/action.</li>
+          <li>The combat pet's slot level multiplies <strong>monsterGoldFlat / monsterGoldPercentage directly</strong> &mdash; the dominant term in <code>gold.base</code>, which is then multiplied again by the party multiplier.</li>
+          <li>The utility pet's slot level only boosts its own <strong>raw Potion Effect roll</strong> &mdash; one additive term inside Potion Effect's Base, feeding a small Premium sub-term dwarfed by the pooled party Base it multiplies against.</li>
         </ul>
       </div>
     </details>
-
   </main>
 </div>
 
-<button type="button" id="backToTop" aria-label="Back to top">&uarr;</button>
+<div id="tip" role="tooltip"></div>
+<button type="button" id="theme" aria-label="Toggle light and dark">&#9789;</button>
 
 <script>
 /* GENERATED from data/ by userscripts/build.mjs — do not edit. */
@@ -531,56 +522,48 @@ window.APOZ_FACTS = (function () {
 (function(){
   "use strict";
 
-  var STORAGE_KEY = 'petSlotROI.inputs.v3';
-  var DEFAULTS_KEY = 'petSlotROI.defaults.v2';
-  var LEGACY_STORAGE_KEY = 'petSlotROI.inputs.v2';
-  var LEGACY_DEFAULTS_KEY = 'petSlotROI.defaults.v1';
+  var STORAGE_KEY = 'petSlotROI.inputs.v4';
+  var DEFAULTS_KEY = 'petSlotROI.defaults.v3';
+  var THEME_KEY = 'petSlotROI.theme';
+  var LEGACY_STORAGE = ['petSlotROI.inputs.v3','petSlotROI.inputs.v2'];
+  var LEGACY_DEFAULTS = ['petSlotROI.defaults.v2','petSlotROI.defaults.v1'];
 
   var ORIGINAL_DEFAULTS = {
     combat: 50, utility: 30,
     enchants: 518, sculptures: 500, skillTree: 0, petGoldMod: 0,
     market: 320, village: 40,
-    pvpGoldTile: 20, pvpPotionTile: 4,
+    pvpGoldTile: 20, pvpPotionTile: 4, tax: 0,
     partyMembers: 4, othersGoldBoost: 0,
     goldPotion: 10, event: 0,
     monsterLevel: 230000, characterLevel: 11500, actionsPerWeek: 6000,
     petILevel: 11000, petTier: 16, petRollPercentile: 75,
-    otherGoldFlat: 0, otherGoldPct: 0,
     observedGold: 0
   };
   var DEFAULTS = Object.assign({}, ORIGINAL_DEFAULTS);
-  var VIP_DEFAULT_CHECKED = true;
-  var OTHERS_SAME_DEFAULT_CHECKED = true;
+  var CHECK_DEFAULTS = { vip: true, othersSame: true, useLivePet: false };
 
   var FIELD_IDS = {
     combat: 'combatInput', utility: 'utilityInput',
     enchants: 'enchantsInput', sculptures: 'sculpturesInput',
     skillTree: 'skillTreeInput', petGoldMod: 'petGoldModInput',
     market: 'marketInput', village: 'villageInput',
-    pvpGoldTile: 'pvpGoldTileInput', pvpPotionTile: 'pvpPotionTileInput',
+    pvpGoldTile: 'pvpGoldTileInput', pvpPotionTile: 'pvpPotionTileInput', tax: 'taxInput',
     partyMembers: 'partyMembersInput', othersGoldBoost: 'othersGoldBoostInput',
     goldPotion: 'goldPotionInput', event: 'eventInput',
     monsterLevel: 'monsterLevelInput', characterLevel: 'characterLevelInput', actionsPerWeek: 'actionsPerWeekInput',
     petILevel: 'petILevelInput', petTier: 'petTierInput', petRollPercentile: 'petRollPercentileInput',
-    otherGoldFlat: 'otherGoldFlatInput', otherGoldPct: 'otherGoldPctInput',
     observedGold: 'observedGoldInput'
   };
-  var CHECK_IDS = { vip: 'vipInput', othersSame: 'othersSameInput' };
-  var CHECK_DEFAULTS = { vip: VIP_DEFAULT_CHECKED, othersSame: OTHERS_SAME_DEFAULT_CHECKED };
-
+  var CHECK_IDS = { vip: 'vipInput', othersSame: 'othersSameInput', useLivePet: 'useLivePetInput' };
   var VIP_PCT_WHEN_ON = 0.10;
 
-  // ---- the core facts, all generated into window.APOZ_FACTS by the build ----
-  //
+  // ---- core facts, all generated into window.APOZ_FACTS by the build ----
   // slotBoostPercent is emitted from equipment.slotUpgrade.boostFormula, which
   // pets.slotBoostFormula states is the identical function for pet slots.
-  // Despite the name it returns a FRACTION (0.3*block..., 0.01*intoBlock...),
-  // so *100 happens here at the one call site and nowhere else.
-  // *100 + round: the emitted fraction is 0.3*block*(block+1)/2 + intoBlock*0.01*(block+1),
-  // whose percent form is always a whole number - so rounding is exact and it is
-  // the only thing standing between the UI and "+70.00000000000001%".
+  // Despite the name it returns a FRACTION, so *100 happens here and nowhere
+  // else. The percent form is always a whole number, so rounding is exact and
+  // is the only thing between the UI and "+70.00000000000001%".
   function slotBoostPct(L){ return Math.round(APOZ_FACTS.slotBoostPercent(L) * 100); }
-  // cost of buying INTO level L (i.e. L-1 -> L)
   function stepCost(L){ return APOZ_FACTS.petSlotUpgradeCost(L - 1, L).value; }
 
   function petTierMultiplier(tier){
@@ -588,22 +571,26 @@ window.APOZ_FACTS = (function () {
     tier = Math.max(1, Math.min(t.length, Math.round(tier)));
     return 1 + t[tier-1]/100;
   }
-  function petVariance(percentile){
-    var pct = Math.max(0, Math.min(100, percentile))/100;
-    return 0.97 + pct*(1.03-0.97);
-  }
-  // pre-slot-boost raw rolls - depend on the live pet-roll inputs (iLevel/tier/percentile)
+  function petVariance(pct){ return 0.97 + Math.max(0, Math.min(100, pct))/100 * (1.03-0.97); }
+
+  // The pet's rolled modifiers. Either MODELLED from iLevel/tier/roll, or taken
+  // straight from what the userscript read off your actual pets. The modelled
+  // path is for normalised comparisons; the live path is your real answer, and
+  // when it is in use the modelling inputs grey out rather than being left to
+  // look as though they still matter.
   function petRawRolls(p){
+    if (p.useLivePet && p.livePet) {
+      return { source: 'live',
+        rawFlat: p.livePet.flat, rawPct: p.livePet.pct, rawPotionEffect: p.livePet.potion };
+    }
     var iL = Math.max(p.petILevel, 101);
     var tm = petTierMultiplier(p.petTier);
     var v = petVariance(p.petRollPercentile);
     var base = Math.pow(iL-100, 0.49);
-    return {
-      iL: iL, tm: tm, v: v,
+    return { source: 'modelled',
       rawFlat: Math.log(base+1) * 0.1 * v * tm,
       rawPct: base * 0.005 * v * tm,
-      rawPotionEffect: base * 0.0025 * v * tm
-    };
+      rawPotionEffect: base * 0.0025 * v * tm };
   }
 
   // ---- formatting ----
@@ -616,26 +603,17 @@ window.APOZ_FACTS = (function () {
   function fmtInt(n){ return isFinite(n) ? Math.round(n).toLocaleString('en-US') : '—'; }
   function P(x){ return (x*100).toFixed(2)+'%'; }
   function weeks(w){ return !isFinite(w) ? '—' : w < 1 ? (w*7).toFixed(1)+' d' : w.toFixed(1)+' wk'; }
-
-  function clampLevel(v){
-    v = parseInt(v, 10);
-    if (isNaN(v) || v < 0) v = 0;
-    if (v > 5000) v = 5000;
-    return v;
-  }
-  function num(v, fallback){
-    v = parseFloat(v);
-    return isNaN(v) ? fallback : v;
-  }
+  function clampLevel(v){ v = parseInt(v,10); if (isNaN(v)||v<0) v=0; return v>5000?5000:v; }
+  function num(v, fb){ v = parseFloat(v); return isNaN(v) ? fb : v; }
 
   // ---- profile ----
-  //
-  // buildProfile() is pure: raw percentages and levels in, a normalized profile
-  // out. readInputs() is the only part that touches the DOM. Splitting them is
-  // what lets tests/userscript-roi-math.mjs exercise the actual shipped
-  // arithmetic instead of a re-typed copy of it.
+  // buildProfile() is pure: raw values in, normalised profile out. readInputs()
+  // is the only part that touches the DOM. That split is what lets
+  // tests/userscript-roi-math.mjs exercise the shipped arithmetic rather than a
+  // re-typed copy of it.
   function buildProfile(raw){
-    raw = Object.assign({}, ORIGINAL_DEFAULTS, { vipChecked: true, othersSame: true }, raw);
+    raw = Object.assign({}, ORIGINAL_DEFAULTS,
+      { vipChecked: true, othersSame: true, useLivePet: false, livePet: null }, raw);
     raw.combat = clampLevel(raw.combat);
     raw.utility = clampLevel(raw.utility);
     if (raw.actionsPerWeek <= 0) raw.actionsPerWeek = 1;
@@ -654,10 +632,11 @@ window.APOZ_FACTS = (function () {
       skillTree: raw.skillTree/100, petGoldMod: raw.petGoldMod/100,
       market: raw.market/100, pvpGoldTile: raw.pvpGoldTile/100,
       village: raw.village/100, pvpPotionTile: raw.pvpPotionTile/100,
+      tax: Math.max(0, Math.min(100, raw.tax))/100,
       monsterLevel: raw.monsterLevel, characterLevel: raw.characterLevel,
       actionsPerWeek: raw.actionsPerWeek,
       petILevel: raw.petILevel, petTier: raw.petTier, petRollPercentile: raw.petRollPercentile,
-      otherGoldFlat: raw.otherGoldFlat, otherGoldPct: raw.otherGoldPct/100,
+      useLivePet: !!raw.useLivePet, livePet: raw.livePet || null,
       observedGold: raw.observedGold > 0 ? raw.observedGold * 1e9 : null
     };
     p.rolls = petRawRolls(p);
@@ -668,68 +647,56 @@ window.APOZ_FACTS = (function () {
 
   function readInputs(){
     var raw = {}, key;
-    for (key in FIELD_IDS){
-      raw[key] = num(document.getElementById(FIELD_IDS[key]).value, DEFAULTS[key]);
-    }
+    for (key in FIELD_IDS) raw[key] = num(document.getElementById(FIELD_IDS[key]).value, DEFAULTS[key]);
     raw.vipChecked = document.getElementById(CHECK_IDS.vip).checked;
     raw.othersSame = document.getElementById(CHECK_IDS.othersSame).checked;
+    raw.useLivePet = document.getElementById(CHECK_IDS.useLivePet).checked;
+    raw.livePet = livePetModifiers;
     return buildProfile(raw);
   }
 
-  // ---- formula chain, parameterized on the live profile `p` ----
+  // ---- formula chain ----
   function personalGoldTotal(p){
     var base = p.enchants + p.market + p.village + p.sculptures + p.skillTree + p.petGoldMod;
     return (1+base)*(1+p.pvpGoldTile) - 1;
   }
   // party.gold.rewardBoostFormula: PooledBase is the SUM across members of each
-  // member's OWN fully-stacked personal gold total - not an average, and not
-  // your own value scaled. party.fifthMemberPenalty.formula then applies x0.8
-  // at exactly 5 members.
+  // member's OWN fully-stacked personal total. party.fifthMemberPenalty.formula
+  // then applies x0.8 at exactly 5.
   function pooledBase(p){
     var mine = personalGoldTotal(p);
     var others = (p.partyMembers - 1) * (p.othersSameAsMe ? mine : p.othersGoldBoost);
     return (mine + others) * APOZ_FACTS.partySizeMultiplier(p.partyMembers);
   }
 
-  // The hot path. A crossover scan evaluates gold/action ~1,600 times per
-  // combat level examined, so this allocates nothing and reads `p.pooled` /
-  // `p.levelMult`, both computed once per render in readInputs().
+  // The hot path. A crossover scan evaluates this ~1,600 times per combat level
+  // examined, so it allocates nothing and reads values hoisted in buildProfile.
   function partyMultAt(p, U){
     var pe = p.rolls.rawPotionEffect * (1 + slotBoostPct(U)/100);
     var potionEffectTotal = (1 + pe + 2*p.village)*(1+p.pvpPotionTile) - 1;
     var premium = p.vip + p.goldPotionBase*(1+potionEffectTotal);
     return (1+p.pooled)*(1+premium)*(1+p.event);
   }
-
-  // Same arithmetic, itemised - for the calculation-steps ledger only.
   function potionMix(p, U){
-    var petPotionEffect = p.rolls.rawPotionEffect * (1 + slotBoostPct(U)/100);
-    var potionEffectBase = petPotionEffect + p.village + p.village; // Potent + Explorations
+    var pe = p.rolls.rawPotionEffect * (1 + slotBoostPct(U)/100);
+    var potionEffectBase = pe + p.village + p.village;
     var potionEffectTotal = (1+potionEffectBase)*(1+p.pvpPotionTile) - 1;
     var goldPotionBonus = p.goldPotionBase*(1+potionEffectTotal);
-    return { petPotionEffect: petPotionEffect, potionEffectBase: potionEffectBase,
+    return { petPotionEffect: pe, potionEffectBase: potionEffectBase,
              potionEffectTotal: potionEffectTotal, goldPotionBonus: goldPotionBonus,
              premium: p.vip + goldPotionBonus, mult: partyMultAt(p, U) };
   }
-
-  // gold.base = (3 + monsterGoldFlat) * (1 + monsterGoldPercentage) * monsterLevel,
-  // where both are MERGED multipliers. The pet's own contribution is the part
-  // the slot level boosts; everything else is added outside the boost, which is
-  // what keeps the slot-level sweep honest.
   function goldBaseAt(p, C){
     var boost = 1 + slotBoostPct(C)/100;
-    return (3 + p.rolls.rawFlat*boost + p.otherGoldFlat)
-         * (1 + p.rolls.rawPct*boost + p.otherGoldPct)
-         * p.monsterLevel;
+    return (3 + p.rolls.rawFlat*boost) * (1 + p.rolls.rawPct*boost) * p.monsterLevel;
   }
   function goldPerAction(p, C, U){ return goldBaseAt(p, C) * p.levelMult * partyMultAt(p, U); }
+  // What you actually keep. A flat tax scales both channels equally, so it never
+  // changes WHICH slot to buy - it only makes the number comparable to the
+  // game's own "kept" figure.
+  function keptPerAction(p, C, U){ return goldPerAction(p, C, U) * (1 - p.tax); }
 
-  // ---- marginal economics: the one comparison that is actually fair ----
-  //
-  // Both slots share the identical cost curve keyed on their OWN next level, so
-  // the decision rule is gold/action gained per gold spent. Neither "boost %"
-  // nor "payback weeks at a fixed level" is comparable across the two channels
-  // when the two current levels differ - which is exactly the case that matters.
+  // ---- marginal economics ----
   function marginal(p, C, U, channel){
     var next = (channel === 'combat' ? C : U) + 1;
     var cost = stepCost(next);
@@ -741,10 +708,9 @@ window.APOZ_FACTS = (function () {
   }
 
   // Largest utility level at which utility still beats combat, for a fixed
-  // combat level. NOT solved by early-exit search: a pet slot's per-level rate
-  // steps up every 30 levels, so utility efficiency JUMPS at 30/60/90 and the
-  // winning set is not contiguous. Scanning the whole range is O(cap) cheap
-  // arithmetic and is the only way to get this right.
+  // combat level. NOT an early-exit search: a slot's per-level rate steps up
+  // every 30 levels, so efficiency JUMPS at 30/60/90 and the winning set is not
+  // contiguous. Scanning the whole range is cheap and is the only correct way.
   var CROSS_SCAN_CAP = 400;
   function crossoverUtility(p, C, cap){
     cap = cap || CROSS_SCAN_CAP;
@@ -758,27 +724,65 @@ window.APOZ_FACTS = (function () {
     return best;
   }
 
-  // Greedy forward simulation from the real current state: always buy whichever
-  // slot returns more gold/action per gold right now. Reports the flip.
   function greedyPlan(p, steps){
     var C = p.combat, U = p.utility, seq = [], total = 0, flipAt = -1, prev = null;
     for (var i = 0; i < steps; i++){
-      var mc = marginal(p, C, U, 'combat');
-      var mu = marginal(p, C, U, 'utility');
+      var mc = marginal(p, C, U, 'combat'), mu = marginal(p, C, U, 'utility');
       var pick = mu.eff > mc.eff ? 'utility' : 'combat';
       var m = pick === 'combat' ? mc : mu;
       if (prev !== null && pick !== prev && flipAt < 0) flipAt = i;
-      prev = pick;
-      total += m.cost;
+      prev = pick; total += m.cost;
       seq.push({ channel: pick, level: m.level, cost: m.cost });
       if (pick === 'combat') C++; else U++;
     }
     return { seq: seq, total: total, flipAt: flipAt, endC: C, endU: U };
   }
 
-  // ---- condensed calc-steps ledger ----
-  function tip(label, techName){
-    return '<span class="tip">' + label + '<span class="bubble">' + techName + '</span></span>';
+  // ---- tooltips ----
+  // ONE fixed-position element, not a bubble inside each trigger. The old
+  // per-element bubbles were clipped by the sidebar's scroll container, which
+  // is unavoidable for an absolutely-positioned child of an overflow:auto
+  // ancestor. Fixed positioning escapes the container entirely.
+  var tipEl = null, tipFor = null;
+  function showTip(el){
+    var text = el.getAttribute('data-tip');
+    if (!text) return;
+    tipFor = el;
+    tipEl.textContent = text;
+    tipEl.classList.add('on');
+    var r = el.getBoundingClientRect();
+    var t = tipEl.getBoundingClientRect();
+    var left = Math.min(Math.max(8, r.left + r.width/2 - t.width/2), window.innerWidth - t.width - 8);
+    var top = r.top - t.height - 8;
+    if (top < 8) top = r.bottom + 8;   // flip below when there is no room above
+    tipEl.style.left = Math.round(left) + 'px';
+    tipEl.style.top = Math.round(top) + 'px';
+  }
+  function hideTip(){ tipFor = null; tipEl.classList.remove('on'); }
+  function initTips(){
+    tipEl = document.getElementById('tip');
+    document.addEventListener('mouseover', function(e){
+      var el = e.target && e.target.closest && e.target.closest('[data-tip]');
+      if (el) showTip(el);
+    });
+    document.addEventListener('mouseout', function(e){
+      var el = e.target && e.target.closest && e.target.closest('[data-tip]');
+      if (el && el === tipFor) hideTip();
+    });
+    document.addEventListener('focusin', function(e){
+      var el = e.target && e.target.closest && e.target.closest('[data-tip]');
+      if (el) showTip(el);
+    });
+    document.addEventListener('focusout', hideTip);
+    // A tooltip pinned to viewport coordinates is wrong the moment anything
+    // scrolls, and re-measuring on every scroll frame is not worth it.
+    window.addEventListener('scroll', hideTip, true);
+  }
+
+  // ---- calculation steps ----
+  function tipAttr(technical){ return technical.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+  function tipSpan(label, technical){
+    return '<span class="tip" data-tip="' + tipAttr(technical) + '">' + label + '</span>';
   }
   function buildLedger(p){
     var C = p.combat, U = p.utility;
@@ -786,235 +790,219 @@ window.APOZ_FACTS = (function () {
     var gb = goldBaseAt(p, C);
     var lm = p.levelMult;
     var gpa = gb * lm * mix.mult;
-    var incomeGoldBaseSum = p.enchants + p.market + p.village + p.sculptures + p.skillTree + p.petGoldMod;
+    var kept = gpa * (1 - p.tax);
+    var baseSum = p.enchants + p.market + p.village + p.sculptures + p.skillTree + p.petGoldMod;
     var penalty = APOZ_FACTS.partySizeMultiplier(p.partyMembers);
 
-    document.getElementById('headlineGold').textContent = fmt(gpa) + ' gold';
+    document.getElementById('headlineGold').textContent = fmt(gpa);
+    var keptRow = document.getElementById('keptRow');
+    keptRow.hidden = !p.tax;
+    if (p.tax) document.getElementById('keptGold').textContent = fmt(kept);
     document.getElementById('combatBoostOut').textContent = '+' + slotBoostPct(C) + '%';
     document.getElementById('utilityBoostOut').textContent = '+' + slotBoostPct(U) + '%';
 
-    // 5 x 0.8 = 4, exactly. A 5th member who matches you is worth precisely
-    // nothing to pooled gold - which is not obvious from either the penalty or
-    // the pooling rule on its own, so the page says it rather than leaving the
-    // number to be noticed.
+    document.getElementById('rollFlatOut').textContent = p.rolls.rawFlat.toFixed(3);
+    document.getElementById('rollPctOut').textContent = P(p.rolls.rawPct);
+    document.getElementById('rollPotionOut').textContent = P(p.rolls.rawPotionEffect);
+    document.getElementById('petSourceNote').textContent = p.rolls.source === 'live'
+      ? 'From your imported pets, before the slot boost.'
+      : 'Modelled from iLevel / tier / roll, before the slot boost.';
+
+    // 5 x 0.8 = 4 exactly, so a 5th member who matches you is worth precisely
+    // nothing to pooled gold - not obvious from either rule on its own.
     var partyNote = document.getElementById('partyNote');
     if (p.partyMembers === 5){
-      var four = (4 * (p.othersSameAsMe ? personalGoldTotal(p) : (personalGoldTotal(p) + 3*p.othersGoldBoost)/4));
-      var fifthWorth = pooledBase(p) - (p.othersSameAsMe ? 4*personalGoldTotal(p) : personalGoldTotal(p) + 3*p.othersGoldBoost);
-      partyNote.innerHTML = fifthWorth > 1e-9
-        ? '5th member adds <strong>+' + P(fifthWorth) + '</strong> to Pooled Base after the &times;0.8 penalty.'
-        : (Math.abs(fifthWorth) < 1e-9
-            ? '<strong>The 5th member is exactly break-even for gold</strong> &mdash; 5 &times; 0.8 = 4, so a member who matches you adds nothing here. They only pay for themselves if their own Gold Boost beats a quarter of the other four’s total. (Battle stats are a separate question.)'
-            : '5th member <strong>costs</strong> you ' + P(-fifthWorth) + ' of Pooled Base &mdash; the &times;0.8 penalty outweighs what they bring.');
+      var withoutFifth = p.othersSameAsMe ? 4*personalGoldTotal(p) : personalGoldTotal(p) + 3*p.othersGoldBoost;
+      var fifthWorth = p.pooled - withoutFifth;
+      partyNote.innerHTML = Math.abs(fifthWorth) < 1e-9
+        ? '<strong>The 5th member is exactly break-even for gold</strong> — 5 &times; 0.8 = 4. They only pay for themselves if their own Gold Boost beats a quarter of the other four’s total.'
+        : fifthWorth > 0
+          ? '5th member adds <strong>+' + P(fifthWorth) + '</strong> to Pooled Base after the &times;0.8 penalty.'
+          : '5th member <strong>costs</strong> ' + P(-fifthWorth) + ' of Pooled Base — the penalty outweighs them.';
       partyNote.hidden = false;
-      void four;
-    } else {
-      partyNote.hidden = true;
-    }
+    } else { partyNote.hidden = true; }
 
     var calibRow = document.getElementById('calibRow');
     if (p.observedGold){
-      var d = gpa - p.observedGold;
+      var d = kept - p.observedGold;
       var el = document.getElementById('calibOut');
-      el.textContent = (d >= 0 ? '+' : '−') + fmt(Math.abs(d)) + '  (' + (d/p.observedGold*100).toFixed(1) + '%)';
-      el.className = 'result-value-sm ' + (Math.abs(d/p.observedGold) < 0.01 ? 'ok' : 'off');
+      el.textContent = (d >= 0 ? '+' : '−') + fmt(Math.abs(d)) + ' (' + (d/p.observedGold*100).toFixed(1) + '%)';
+      el.className = 'v ' + (Math.abs(d/p.observedGold) < 0.01 ? 'good' : 'off');
       calibRow.hidden = false;
-    } else {
-      calibRow.hidden = true;
-    }
+    } else { calibRow.hidden = true; }
 
-    document.getElementById('ledger').innerHTML =
-      '<div class="calc-step"><span class="calc-step-n">1</span>' +
-        '<span class="step-label">' + tip('Personal Gold Boost', 'mirrors: Character &rsaquo; Boosts &rsaquo; &quot;Gold Boost&quot; &middot; per member, pre-pool') + '</span>' +
-        '<span class="step-expr">(1+' + P(incomeGoldBaseSum) + ')&times;(1+' + P(p.pvpGoldTile) + ' PvP)&minus;1</span>' +
-        '<span class="step-val">' + P(personalGoldTotal(p)) + '</span></div>' +
-      '<div class="calc-step"><span class="calc-step-n">2</span>' +
-        '<span class="step-label">' + tip('Party Pooling', 'mirrors: Party &rsaquo; Overview &rsaquo; &quot;Combined Party&quot; &middot; sum of each member’s own total') + '</span>' +
-        '<span class="step-expr">' + (p.othersSameAsMe
-            ? P(personalGoldTotal(p)) + '&times;' + p.partyMembers
-            : 'me ' + P(personalGoldTotal(p)) + ' + ' + (p.partyMembers-1) + '&times;' + P(p.othersGoldBoost)) +
-          (penalty !== 1 ? ' &times;' + penalty + ' (5-member penalty)' : '') + '</span>' +
-        '<span class="step-val">' + P(pooledBase(p)) + '</span></div>' +
-      '<div class="calc-step"><span class="calc-step-n">3</span>' +
-        '<span class="step-label">' + tip('Potion Effect', 'mirrors: &quot;Potion Effect&quot; card &middot; Utility pet, slot ' + U) + '</span>' +
-        '<span class="step-expr">rawPotionEffect&times;boost + village&times;2, &times;(1+pvpPotionTile)</span>' +
-        '<span class="step-val">' + P(mix.potionEffectTotal) + '</span></div>' +
-      '<div class="calc-step"><span class="calc-step-n">4</span>' +
-        '<span class="step-label">' + tip('Gold Potion &rarr; Premium', 'goldPotionBase &times; (1+potionEffectTotal), feeds Premium with VIP') + '</span>' +
-        '<span class="step-expr">' + p.goldPotionBase.toFixed(2) + '&times;(1+' + P(mix.potionEffectTotal) + ') + VIP ' + P(p.vip) + '</span>' +
-        '<span class="step-val">' + P(mix.premium) + '</span></div>' +
-      '<div class="calc-step"><span class="calc-step-n">5</span>' +
-        '<span class="step-label">' + tip('Party Gold Multiplier', 'party.gold.rewardBoostFormula &middot; (1+Pooled)(1+Premium)(1+Event)') + '</span>' +
-        '<span class="step-expr">(1+' + P(pooledBase(p)) + ')&times;(1+' + P(mix.premium) + ')&times;(1+' + P(p.event) + ')</span>' +
-        '<span class="step-val">&times;' + mix.mult.toFixed(2) + '</span></div>' +
-      '<div class="calc-step"><span class="calc-step-n">6</span>' +
-        '<span class="step-label">' + tip('Monster Gold Base', 'mirrors: kill reward &rsaquo; gold formula-viewer &middot; Combat pet, slot ' + C) + '</span>' +
-        '<span class="step-expr">(3+rawFlat&times;boost' + (p.otherGoldFlat ? '+' + p.otherGoldFlat.toFixed(2) : '') +
-          ')&times;(1+rawPct&times;boost' + (p.otherGoldPct ? '+' + P(p.otherGoldPct) : '') +
-          ')&times;' + fmtInt(p.monsterLevel) + '</span>' +
-        '<span class="step-val">' + fmt(gb) + '</span></div>' +
-      '<div class="calc-step final"><span class="calc-step-n">7</span>' +
-        '<span class="step-label">' + tip('Gold / Party Action', 'gold.base &times; level mult (1+0.0001&times;characterLevel) &times; party mult') + '</span>' +
-        '<span class="step-expr">' + fmt(gb) + '&times;' + lm.toFixed(2) + '&times;' + mix.mult.toFixed(2) + '</span>' +
-        '<span class="step-val">' + fmt(gpa) + '</span></div>';
+    var steps = [
+      ['Personal Gold Boost', 'mirrors Character > Boosts > "Gold Boost" - per member, pre-pool',
+       '(1+' + P(baseSum) + ')x(1+' + P(p.pvpGoldTile) + ' PvP)-1', P(personalGoldTotal(p))],
+      ['Party Pooling', 'party.gold.rewardBoostFormula - the sum of each member’s own total',
+       (p.othersSameAsMe ? P(personalGoldTotal(p)) + 'x' + p.partyMembers
+                         : 'me ' + P(personalGoldTotal(p)) + ' + ' + (p.partyMembers-1) + 'x' + P(p.othersGoldBoost))
+       + (penalty !== 1 ? ' x' + penalty + ' (5-member penalty)' : ''), P(p.pooled)],
+      ['Potion Effect', 'Utility pet, slot ' + U,
+       'rawPotionEffect x boost + village x2, x(1+pvpPotionTile)', P(mix.potionEffectTotal)],
+      ['Gold Potion to Premium', 'goldPotionBase x (1+potionEffectTotal), feeds Premium with VIP',
+       p.goldPotionBase.toFixed(2) + 'x(1+' + P(mix.potionEffectTotal) + ') + VIP ' + P(p.vip), P(mix.premium)],
+      ['Party Gold Multiplier', '(1+Pooled)(1+Premium)(1+Event)',
+       '(1+' + P(p.pooled) + ')x(1+' + P(mix.premium) + ')x(1+' + P(p.event) + ')', 'x' + mix.mult.toFixed(2)],
+      ['Monster Gold Base', 'Combat pet, slot ' + C,
+       '(3+rawFlat x boost)x(1+rawPct x boost)x' + fmtInt(p.monsterLevel), fmt(gb)]
+    ];
+    var html = '';
+    for (var i = 0; i < steps.length; i++){
+      html += '<div class="step"><span class="step-n">' + (i+1) + '</span>'
+        + '<span class="l">' + tipSpan(steps[i][0], steps[i][1]) + '</span>'
+        + '<span class="e">' + steps[i][2] + '</span>'
+        + '<span class="v">' + steps[i][3] + '</span></div>';
+    }
+    html += '<div class="step final"><span class="step-n">' + (steps.length+1) + '</span>'
+      + '<span class="l">' + tipSpan('Gold / Party Action', 'gold.base x level mult (1+0.0001 x characterLevel) x party mult') + '</span>'
+      + '<span class="e">' + fmt(gb) + 'x' + lm.toFixed(2) + 'x' + mix.mult.toFixed(2) + '</span>'
+      + '<span class="v">' + fmt(gpa) + '</span></div>';
+    if (p.tax) {
+      html += '<div class="step final"><span class="step-n">' + (steps.length+2) + '</span>'
+        + '<span class="l">' + tipSpan('Kept after tax', 'true income - what reaches your gold after the village takes its share') + '</span>'
+        + '<span class="e">' + fmt(gpa) + ' x (1-' + P(p.tax) + ')</span>'
+        + '<span class="v">' + fmt(kept) + '</span></div>';
+    }
+    document.getElementById('ledger').innerHTML = html;
   }
 
-  // ---- breakpoint comparison ----
+  // ---- breakpoint ----
   function buildBreakpoint(p){
     var mc = marginal(p, p.combat, p.utility, 'combat');
     var mu = marginal(p, p.combat, p.utility, 'utility');
     var combatWins = mc.eff >= mu.eff;
 
-    function fill(prefix, m, box, tag){
-      document.getElementById(prefix + 'ComparBig').textContent = (m.eff * 1e9).toFixed(m.eff*1e9 < 10 ? 2 : 0);
+    function fill(prefix, m, boxId, tagId){
+      document.getElementById(prefix + 'ComparBig').textContent = (m.eff*1e9).toFixed(m.eff*1e9 < 10 ? 2 : 0);
       document.getElementById(prefix + 'StepCost').textContent = fmt(m.cost);
       document.getElementById(prefix + 'StepGain').textContent = fmt(m.gain);
       document.getElementById(prefix + 'StepBack').textContent =
-        weeks(m.paybackActions / p.actionsPerWeek) + ' (' + fmtInt(m.paybackActions) + ' actions)';
-      document.getElementById(box).classList.toggle('win', (prefix === 'combat') === combatWins);
-      document.getElementById(tag).hidden = (prefix === 'combat') !== combatWins;
+        weeks(m.paybackActions / p.actionsPerWeek) + ' (' + fmtInt(m.paybackActions) + ')';
+      document.getElementById(boxId).classList.toggle('win', (prefix === 'combat') === combatWins);
+      document.getElementById(tagId).hidden = (prefix === 'combat') !== combatWins;
     }
     document.getElementById('combatNextLbl').textContent = '→ ' + mc.level;
     document.getElementById('utilNextLbl').textContent = '→ ' + mu.level;
     fill('combat', mc, 'combatBox', 'combatWinTag');
     fill('util', mu, 'utilityBox', 'utilWinTag');
 
-    // verdict
-    var ratio = combatWins
-      ? (mu.eff > 0 ? mc.eff/mu.eff : Infinity)
-      : (mc.eff > 0 ? mu.eff/mc.eff : Infinity);
+    var ratio = combatWins ? (mu.eff > 0 ? mc.eff/mu.eff : Infinity) : (mc.eff > 0 ? mu.eff/mc.eff : Infinity);
     var ans = document.getElementById('verdictAnswer');
     ans.textContent = combatWins ? 'COMBAT → ' + mc.level : 'UTILITY → ' + mu.level;
     ans.classList.toggle('util', !combatWins);
     document.getElementById('verdictWhy').innerHTML =
       'At combat <strong>' + p.combat + '</strong> / utility <strong>' + p.utility + '</strong>, the next <strong>' +
       (combatWins ? 'combat' : 'utility') + '</strong> level returns <strong>' +
-      (isFinite(ratio) ? ratio.toFixed(1) + '×' : '∞') +
-      '</strong> more gold/action per gold spent than the other slot. It costs ' + fmt((combatWins?mc:mu).cost) +
-      ' and pays itself back in ' + weeks((combatWins?mc:mu).paybackActions / p.actionsPerWeek) + '.';
+      (isFinite(ratio) ? ratio.toFixed(1) + '×' : '∞') + '</strong> more gold/action per gold spent. It costs ' +
+      fmt((combatWins?mc:mu).cost) + ' and pays back in ' + weeks((combatWins?mc:mu).paybackActions / p.actionsPerWeek) + '.';
 
     var bp = crossoverUtility(p, p.combat);
     document.getElementById('verdictBreak').innerHTML = bp < 0
-      ? 'The break-even point is already behind you: with combat at <strong>' + p.combat +
-        '</strong>, no utility level beats the next combat level — combat is the buy until it gets much more expensive.'
-      : 'Break-even: with combat at <strong>' + p.combat + '</strong>, utility levels are worth buying up to <strong>' +
-        bp + '</strong>' + (p.utility <= bp
-          ? ' — you are at ' + p.utility + ', so utility still has ' + (bp - p.utility) + ' worthwhile level' + (bp-p.utility===1?'':'s') + ' in it.'
-          : ' — you are already past it at ' + p.utility + '.');
+      ? 'Break-even is behind you: at combat <strong>' + p.combat + '</strong>, no utility level beats the next combat level.'
+      : 'Break-even: at combat <strong>' + p.combat + '</strong>, utility is worth buying up to <strong>' + bp + '</strong>' +
+        (p.utility <= bp ? ' — you are at ' + p.utility + ', so ' + (bp - p.utility) + ' worthwhile level' + (bp-p.utility===1?'':'s') + ' remain.'
+                         : ' — you are already past it at ' + p.utility + '.');
 
-    // equivalence table
     var ladder = [0,30,60,90,120,150,180,210,240];
     if (ladder.indexOf(p.combat) < 0) ladder.push(p.combat);
     ladder.sort(function(a,b){ return a-b; });
     var rows = '';
     for (var i = 0; i < ladder.length; i++){
-      var C = ladder[i];
-      var u = crossoverUtility(p, C);
-      var isCur = C === p.combat;
+      var C = ladder[i], u = crossoverUtility(p, C), isCur = C === p.combat;
       rows += '<tr class="' + (isCur ? 'current' : '') + '">' +
         '<td class="lvl">' + C + (isCur ? ' <span class="tag">you</span>' : '') + '</td>' +
         '<td>' + (u < 0 ? 'none — combat always wins' : u) + '</td>' +
         '<td>' + (u < 0 ? '—' : '+' + slotBoostPct(u) + '%') + '</td>' +
         '<td>' + (u < 1 ? '—' : fmt(stepCost(u))) + '</td>' +
-        '<td>' + fmt(stepCost(C+1)) + '</td>' +
-        '</tr>';
+        '<td>' + fmt(stepCost(C+1)) + '</td></tr>';
     }
     document.getElementById('crossTbody').innerHTML = rows;
 
-    // greedy plan
-    var PLAN_STEPS = 24;
-    var plan = greedyPlan(p, PLAN_STEPS);
-    var strip = '';
+    var PLAN_STEPS = 24, plan = greedyPlan(p, PLAN_STEPS), strip = '';
     for (var j = 0; j < plan.seq.length; j++){
       var s = plan.seq[j];
-      strip += '<div class="plan-cell ' + (s.channel === 'combat' ? 'c' : 'u') +
-        (j === plan.flipAt ? ' flip' : '') + '" title="#' + (j+1) + ' — ' + s.channel +
-        ' slot level ' + s.level + ', ' + fmt(s.cost) + ' gold">' + s.level + '</div>';
+      strip += '<div class="cell ' + (s.channel === 'combat' ? 'c' : 'u') + (j === plan.flipAt ? ' flip' : '') +
+        '" data-tip="#' + (j+1) + ' — ' + s.channel + ' slot level ' + s.level + ', ' + fmt(s.cost) + ' gold">' + s.level + '</div>';
     }
     document.getElementById('planStrip').innerHTML = strip;
     var nC = plan.seq.filter(function(s){ return s.channel === 'combat'; }).length;
-    var goldNow = goldPerAction(p, p.combat, p.utility);
-    var fundWeeks = plan.total / goldNow / p.actionsPerWeek;
+    var goldNow = keptPerAction(p, p.combat, p.utility);
     document.getElementById('planNote').innerHTML =
       '<strong>' + nC + ' combat</strong> and <strong>' + (PLAN_STEPS - nC) + ' utility</strong> levels, ending at combat ' +
       plan.endC + ' / utility ' + plan.endU + '. Total ' + fmt(plan.total) + ' gold — about ' +
-      weeks(fundWeeks) + ' of income at your current ' + fmt(goldNow) + '/action and ' +
+      weeks(plan.total / goldNow / p.actionsPerWeek) + ' of income at ' + fmt(goldNow) + '/action kept and ' +
       fmtInt(p.actionsPerWeek) + ' actions a week. ' +
-      (plan.flipAt < 0
-        ? 'No flip inside this window: the same slot wins all 24 times.'
-        : 'The first flip happens at purchase <strong>#' + (plan.flipAt + 1) + '</strong>.');
+      (plan.flipAt < 0 ? 'No flip inside this window.' : 'First flip at purchase <strong>#' + (plan.flipAt + 1) + '</strong>.');
   }
 
   // ---- ROI tables ----
   function buildTableRows(p, sweepFn, currentLevel, maxLevel){
-    var rows = [];
-    var cur = clampLevel(currentLevel);
-    var gAtCur = sweepFn(cur);
-    var cum = 0;
-    var topLevel = Math.max(maxLevel, cur);
-    var prevGold = null;
+    var rows = [], cur = clampLevel(currentLevel), gAtCur = sweepFn(cur), cum = 0;
+    var topLevel = Math.max(maxLevel, cur), prevGold = null;
     for (var L = 0; L <= topLevel; L++){
       var gold = sweepFn(L);
       var cost = L === 0 ? 0 : stepCost(L);
       var marg = L === 0 ? 0 : gold - prevGold;
       prevGold = gold;
-      var margAct = L === 0 ? null : cost/marg;
-      var cumCost = null, cumAct = null;
+      var margAct = L === 0 ? null : cost/marg, cumCost = null, cumAct = null;
       if (L > cur){ cum += cost; cumCost = cum; cumAct = cum/(gold - gAtCur); }
       var cls = [];
       if (L === cur) cls.push('current');
       if (L > 0 && L % 30 === 1) cls.push('boundary');
       var mw = margAct ? margAct/p.actionsPerWeek : null;
       if (mw !== null && mw >= 2 && mw <= 4) cls.push('band');
-      rows.push(
-        '<tr class="'+cls.join(' ')+'">' +
+      rows.push('<tr class="'+cls.join(' ')+'"'+(L===cur?' data-current="1"':'')+'>' +
         '<td class="lvl">'+L+(L===cur?' <span class="tag">current</span>':'')+'</td>' +
-        '<td>'+slotBoostPct(L)+'%</td>' +
-        '<td>'+fmt(gold)+'</td>' +
+        '<td>'+slotBoostPct(L)+'%</td><td>'+fmt(gold)+'</td>' +
         '<td>'+(L===0?'—':fmt(cost))+'</td>' +
         '<td>'+(margAct===null?'—':fmtInt(margAct))+'</td>' +
-        '<td class="wk">'+(mw===null?'—':mw.toFixed(2))+'</td>' +
+        '<td>'+(mw===null?'—':mw.toFixed(2))+'</td>' +
         '<td class="sep">'+(cumCost===null?'—':fmt(cumCost))+'</td>' +
         '<td>'+(cumAct===null?'—':fmtInt(cumAct))+'</td>' +
-        '<td class="wk">'+(cumAct===null?'—':(cumAct/p.actionsPerWeek).toFixed(2))+'</td>' +
-        '</tr>'
-      );
+        '<td>'+(cumAct===null?'—':(cumAct/p.actionsPerWeek).toFixed(2))+'</td></tr>');
     }
     return { html: rows.join(''), count: rows.length, top: topLevel };
   }
 
+  // Put the user's current level where they can see it, with a few rows of
+  // context above and the rest - the levels they might actually buy - below.
+  function scrollToCurrent(wrapId){
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    var row = wrap.querySelector('tr[data-current]');
+    if (!row) return;
+    var head = wrap.querySelector('thead');
+    var headH = head ? head.getBoundingClientRect().height : 0;
+    wrap.scrollTop = Math.max(0, row.offsetTop - headH - row.offsetHeight * 4);
+  }
+
   var combatMaxLevel = 120, utilityMaxLevel = 120;
   var MAX_LEVEL_CAP = 5000;
+  var pendingScroll = true;
 
-  // ---- render ----
-  //
-  // Coalesced through rAF: typing in an input fires `input` per keystroke, and a
-  // full render rebuilds two tables plus a 400-step crossover scan. One frame's
-  // worth of work per frame, never more. Persistence is debounced separately -
-  // localStorage.setItem is synchronous and does not belong on a keystroke.
+  // Coalesced through rAF: typing fires `input` per keystroke and a full render
+  // rebuilds two tables plus a 400-step crossover scan. rAF never fires in a
+  // hidden tab, so a page opened into the background falls back to a timeout
+  // rather than sitting blank until it is looked at.
   var renderQueued = false;
   function requestRender(){
     if (renderQueued) return;
     renderQueued = true;
     var run = function(){ renderQueued = false; render(); };
-    // requestAnimationFrame never fires in a hidden tab. This page can legitimately
-    // be opened into one (window.open from the game, or a background restore), and
-    // an rAF-only path would leave it queued and blank until it was looked at.
     if (document.hidden) setTimeout(run, 0); else requestAnimationFrame(run);
   }
-
   var saveTimer = null;
   function requestSave(){
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function(){
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(collectRawValues())); }
-      catch (e) { /* private mode or blocked storage - ignore */ }
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(collectRawValues())); } catch(e){}
     }, 800);
   }
 
   function render(){
     var p = readInputs();
-
+    syncPetInputsEnabled();
     buildLedger(p);
     buildBreakpoint(p);
 
@@ -1025,10 +1013,11 @@ window.APOZ_FACTS = (function () {
     document.getElementById('combatRowCount').textContent = 'levels 0–' + c.top;
     document.getElementById('utilityRowCount').textContent = 'levels 0–' + u.top;
     document.getElementById('combatMoreBtn').disabled = combatMaxLevel >= MAX_LEVEL_CAP;
-    document.getElementById('combatMore500Btn').disabled = combatMaxLevel >= MAX_LEVEL_CAP;
     document.getElementById('utilityMoreBtn').disabled = utilityMaxLevel >= MAX_LEVEL_CAP;
-    document.getElementById('utilityMore500Btn').disabled = utilityMaxLevel >= MAX_LEVEL_CAP;
 
+    // Only on load and on apply - re-scrolling on every keystroke would fight
+    // the user while they read.
+    if (pendingScroll){ pendingScroll = false; scrollToCurrent('combatWrap'); scrollToCurrent('utilityWrap'); }
     requestSave();
   }
 
@@ -1041,9 +1030,7 @@ window.APOZ_FACTS = (function () {
   }
   function applyRawValues(vals){
     var key;
-    for (key in FIELD_IDS){
-      if (vals[key] !== undefined) document.getElementById(FIELD_IDS[key]).value = vals[key];
-    }
+    for (key in FIELD_IDS) if (vals[key] !== undefined) document.getElementById(FIELD_IDS[key]).value = vals[key];
     for (key in CHECK_IDS){
       if (vals['chk_' + key] !== undefined) document.getElementById(CHECK_IDS[key]).checked = !!vals['chk_' + key];
       else if (key === 'vip' && vals.vipChecked !== undefined) document.getElementById(CHECK_IDS[key]).checked = !!vals.vipChecked;
@@ -1053,13 +1040,13 @@ window.APOZ_FACTS = (function () {
     var key;
     for (key in FIELD_IDS) document.getElementById(FIELD_IDS[key]).value = DEFAULTS[key];
     for (key in CHECK_IDS) document.getElementById(CHECK_IDS[key]).checked = CHECK_DEFAULTS[key];
-    combatMaxLevel = 120; utilityMaxLevel = 120;
+    combatMaxLevel = 120; utilityMaxLevel = 120; pendingScroll = true;
   }
-  function loadPersistedDefaults(){
-    try {
-      var raw = localStorage.getItem(DEFAULTS_KEY) || localStorage.getItem(LEGACY_DEFAULTS_KEY);
-      if (raw){ var parsed = JSON.parse(raw); for (var key in DEFAULTS){ if (parsed[key]!==undefined) DEFAULTS[key] = parsed[key]; } }
-    } catch(e){}
+  function readStored(keys){
+    for (var i = 0; i < keys.length; i++){
+      try { var raw = localStorage.getItem(keys[i]); if (raw) return JSON.parse(raw); } catch(e){}
+    }
+    return null;
   }
   function saveAsDefault(){
     var raw = collectRawValues();
@@ -1070,56 +1057,55 @@ window.APOZ_FACTS = (function () {
   function flash(btn, text){
     var original = btn.textContent;
     btn.textContent = text;
-    setTimeout(function(){ btn.textContent = original; }, 1500);
+    setTimeout(function(){ btn.textContent = original; }, 1400);
   }
 
-  // ---- live import from the userscript ----
-  //
-  // The Apoz Core module injects `window.APOZ_LIVE` into this page before
-  // opening it. Every entry is optional and carries its own source string; a
-  // field that could not be read is simply absent. Nothing is guessed and
-  // nothing is substituted - a missing reading stays missing, because a
-  // plausible wrong number here is worse than no number.
+  // ---- live import ----
+  // Every entry is optional and carries its own source string; a field that
+  // could not be read is ABSENT rather than defaulted. Nothing is guessed - a
+  // plausible wrong input changes the recommendation without looking like it.
   var LIVE_MAP = {
-    combat:         { label: 'Combat slot level',   field: 'combat' },
-    utility:        { label: 'Utility slot level',  field: 'utility' },
-    characterLevel: { label: 'Character level',     field: 'characterLevel' },
-    monsterLevel:   { label: 'Monster level',       field: 'monsterLevel' },
-    partyMembers:   { label: 'Party members',       field: 'partyMembers' },
-    othersGoldBoost:{ label: "Others' Gold Boost",  field: 'othersGoldBoost', suffix: '%' },
-    observedGold:   { label: 'Observed gold/action',field: 'observedGold', scale: 1e-9, suffix: 'B' }
+    combat:          { label: 'Combat slot',       field: 'combat' },
+    utility:         { label: 'Utility slot',      field: 'utility' },
+    characterLevel:  { label: 'Character level',   field: 'characterLevel' },
+    monsterLevel:    { label: 'Monster level',     field: 'monsterLevel' },
+    partyMembers:    { label: 'Party members',     field: 'partyMembers' },
+    othersGoldBoost: { label: 'Others’ boost', field: 'othersGoldBoost', suffix: '%' },
+    goldBoost:       { label: 'Your gold boost',   field: 'enchants', suffix: '%' },
+    actionsPerWeek:  { label: 'Actions / week',    field: 'actionsPerWeek' },
+    tax:             { label: 'Village tax',       field: 'tax', suffix: '%' },
+    observedGold:    { label: 'Observed gold/act', field: 'observedGold', scale: 1e-9, suffix: 'B' }
   };
   var liveData = null;
+  var livePetModifiers = null;
 
   function initLive(){
     var card = document.getElementById('liveCard');
-    var list = document.getElementById('liveList');
-    var empty = document.getElementById('liveEmpty');
-    var actions = document.getElementById('liveActions');
-    var when = document.getElementById('liveWhen');
-
     var src = (typeof window !== 'undefined' && window.APOZ_LIVE) || null;
     if (!src || !src.fields) return;
+
+    if (src.pet && typeof src.pet.flat === 'number' && typeof src.pet.pct === 'number') {
+      livePetModifiers = { flat: src.pet.flat, pct: src.pet.pct, potion: src.pet.potion || 0 };
+    }
     var keys = Object.keys(src.fields).filter(function(k){
       return LIVE_MAP[k] && src.fields[k] && typeof src.fields[k].value === 'number' && isFinite(src.fields[k].value);
     });
-    if (!keys.length) return;
+    if (!keys.length && !livePetModifiers) return;
 
     liveData = src;
-    card.classList.remove('absent');
+    card.classList.add('on');
     var ageMin = src.ts ? Math.round((Date.now() - src.ts)/60000) : null;
-    if (ageMin !== null && ageMin > 30) card.classList.add('stale');
-    when.textContent = ageMin === null ? '' : (ageMin < 1 ? 'just now' : ageMin + 'm ago');
-    empty.hidden = true;
-    actions.hidden = false;
+    document.getElementById('liveWhen').textContent = ageMin === null ? '' : (ageMin < 1 ? 'just now' : ageMin + 'm ago');
+    document.getElementById('liveEmpty').hidden = true;
+    document.getElementById('liveActions').hidden = false;
 
-    list.innerHTML = keys.map(function(k){
-      var m = LIVE_MAP[k], f = src.fields[k];
-      var v = f.value * (m.scale || 1);
-      return '<div class="live-row"><span class="k">' + m.label + '</span>' +
-        '<span><span class="v">' + (Math.abs(v) >= 1000 ? fmtInt(v) : (Math.round(v*100)/100)) +
-        (m.suffix || '') + '</span> <span class="src">' + (f.from || '') + '</span></span></div>';
+    var html = keys.map(function(k){
+      var m = LIVE_MAP[k], f = src.fields[k], v = f.value * (m.scale || 1);
+      return '<span class="k" data-tip="' + tipAttr(f.from || '') + '">' + m.label + '</span>' +
+        '<span class="v">' + (Math.abs(v) >= 1000 ? fmtInt(v) : (Math.round(v*100)/100)) + (m.suffix || '') + '</span>';
     }).join('');
+    if (livePetModifiers) html += '<span class="k">Pet modifiers</span><span class="v">imported</span>';
+    document.getElementById('liveList').innerHTML = html;
 
     document.getElementById('liveApplyBtn').addEventListener('click', function(){
       applyLive();
@@ -1138,102 +1124,113 @@ window.APOZ_FACTS = (function () {
       if (el) el.value = String(Math.round(f.value * (m.scale || 1) * 1000) / 1000);
     }
     if (liveData.fields.othersGoldBoost) document.getElementById(CHECK_IDS.othersSame).checked = false;
+    if (livePetModifiers) document.getElementById(CHECK_IDS.useLivePet).checked = true;
+    pendingScroll = true;
     requestRender();
   }
 
-  // ---- provenance list (which core facts this page was built from) ----
+  // Greying out is the honest signal: when real pet data is in use, the
+  // normalisation inputs are not contributing and should not look as if they are.
+  function syncPetInputsEnabled(){
+    var live = document.getElementById(CHECK_IDS.useLivePet);
+    live.disabled = !livePetModifiers;
+    var on = live.checked && !!livePetModifiers;
+    ['petILevel','petTier','petRollPercentile'].forEach(function(k){
+      document.getElementById(FIELD_IDS[k]).disabled = on;
+    });
+  }
+
   function initProvenance(){
     var ul = document.getElementById('provenanceList');
     var names = (window.APOZ_FACTS && Object.keys(window.APOZ_FACTS)) || [];
     ul.innerHTML = names.length
       ? names.map(function(n){ return '<li><code>' + n + '</code></li>'; }).join('') +
-        '<li>Emitted into this page by <code>userscripts/build.mjs</code> from <code>data/</code>. Correct the fact in the core and rebuild &mdash; nothing here is retyped.</li>'
+        '<li>Emitted into this page by <code>userscripts/build.mjs</code> from <code>data/</code>. Correct the fact in the core and rebuild — nothing here is retyped.</li>'
       : '<li>This copy was opened without the generated facts block.</li>';
   }
 
-  function initBackToTop(){
-    var btn = document.getElementById('backToTop');
-    function update(){
-      btn.classList.toggle('show', window.innerWidth <= 980 && window.scrollY > 420);
+  function initTheme(){
+    var btn = document.getElementById('theme');
+    var stored = null;
+    try { stored = localStorage.getItem(THEME_KEY); } catch(e){}
+    if (stored) document.documentElement.setAttribute('data-theme', stored);
+    function label(){
+      var t = document.documentElement.getAttribute('data-theme');
+      var dark = t === 'dark' || (!t && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      btn.textContent = dark ? '☼' : '☽';
+      btn.title = dark ? 'Switch to light' : 'Switch to dark';
     }
-    window.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update);
-    btn.addEventListener('click', function(){ window.scrollTo({ top: 0, behavior: 'smooth' }); });
-    update();
+    btn.addEventListener('click', function(){
+      var cur = document.documentElement.getAttribute('data-theme');
+      // No stamp yet means we are following the OS; the first click flips away
+      // from whatever the OS is currently giving us.
+      if (!cur) cur = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      var next = cur === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem(THEME_KEY, next); } catch(e){}
+      label();
+    });
+    label();
   }
 
-  function extendTable(which, by, to){
-    var cap = MAX_LEVEL_CAP;
-    if (which === 'combat'){
-      combatMaxLevel = Math.min(cap, to !== undefined ? to : combatMaxLevel + by);
-    } else {
-      utilityMaxLevel = Math.min(cap, to !== undefined ? to : utilityMaxLevel + by);
-    }
+  function extend(which, by, to){
+    if (which === 'combat') combatMaxLevel = Math.min(MAX_LEVEL_CAP, to !== undefined ? to : combatMaxLevel + by);
+    else utilityMaxLevel = Math.min(MAX_LEVEL_CAP, to !== undefined ? to : utilityMaxLevel + by);
     requestRender();
   }
 
   function init(){
-    loadPersistedDefaults();
-    var saved = null;
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (raw) saved = JSON.parse(raw);
-    } catch (e) { /* ignore */ }
+    var savedDefaults = readStored([DEFAULTS_KEY].concat(LEGACY_DEFAULTS));
+    if (savedDefaults) for (var dk in DEFAULTS) if (savedDefaults[dk] !== undefined) DEFAULTS[dk] = savedDefaults[dk];
+
     applyDefaults();
+    var saved = readStored([STORAGE_KEY].concat(LEGACY_STORAGE));
     if (saved) applyRawValues(saved);
 
-    for (var key in FIELD_IDS){
-      document.getElementById(FIELD_IDS[key]).addEventListener('input', requestRender);
-    }
-    for (var ckey in CHECK_IDS){
-      document.getElementById(CHECK_IDS[ckey]).addEventListener('change', requestRender);
-    }
-
-    var panel = document.getElementById('advancedPanel');
-    var toggle = document.getElementById('toggleAdvanced');
-    toggle.addEventListener('click', function(){
-      var isHidden = panel.hasAttribute('hidden');
-      if (isHidden) { panel.removeAttribute('hidden'); toggle.textContent = 'Fewer inputs'; }
-      else { panel.setAttribute('hidden', ''); toggle.textContent = 'More inputs'; }
-    });
+    for (var key in FIELD_IDS) document.getElementById(FIELD_IDS[key]).addEventListener('input', requestRender);
+    for (var ckey in CHECK_IDS) document.getElementById(CHECK_IDS[ckey]).addEventListener('change', requestRender);
 
     document.getElementById('resetBtn').addEventListener('click', function(){ applyDefaults(); requestRender(); });
     document.getElementById('saveDefaultBtn').addEventListener('click', saveAsDefault);
 
-    document.getElementById('combatMoreBtn').addEventListener('click', function(){ extendTable('combat', 60); });
-    document.getElementById('combatMore500Btn').addEventListener('click', function(){ extendTable('combat', 500); });
-    document.getElementById('utilityMoreBtn').addEventListener('click', function(){ extendTable('utility', 60); });
-    document.getElementById('utilityMore500Btn').addEventListener('click', function(){ extendTable('utility', 500); });
-    function jump(which, inputId){
-      var v = clampLevel(document.getElementById(inputId).value);
-      if (v > 0) extendTable(which, 0, v);
-    }
-    document.getElementById('combatJumpBtn').addEventListener('click', function(){ jump('combat', 'combatJumpInput'); });
-    document.getElementById('utilityJumpBtn').addEventListener('click', function(){ jump('utility', 'utilityJumpInput'); });
-    document.getElementById('combatJumpInput').addEventListener('keydown', function(e){ if (e.key === 'Enter') jump('combat', 'combatJumpInput'); });
-    document.getElementById('utilityJumpInput').addEventListener('keydown', function(e){ if (e.key === 'Enter') jump('utility', 'utilityJumpInput'); });
+    [['combat','combatWrap'],['utility','utilityWrap']].forEach(function(pair){
+      var which = pair[0], wrapId = pair[1];
+      document.getElementById(which + 'MoreBtn').addEventListener('click', function(){ extend(which, 30); });
+      document.getElementById(which + 'JumpBtn').addEventListener('click', function(){
+        var v = clampLevel(document.getElementById(which + 'JumpInput').value);
+        if (v > 0) extend(which, 0, v);
+      });
+      document.getElementById(which + 'JumpInput').addEventListener('keydown', function(e){
+        if (e.key === 'Enter') document.getElementById(which + 'JumpBtn').click();
+      });
+      // One-time expansion to fit the viewport, leaving room for the header and
+      // the controls. Not a drag handle, not incremental steps.
+      var btn = document.getElementById(which + 'ExpandBtn');
+      btn.addEventListener('click', function(){
+        var wrap = document.getElementById(wrapId);
+        var tall = wrap.classList.toggle('tall');
+        btn.textContent = tall ? 'Shrink' : 'Expand';
+        scrollToCurrent(wrapId);
+      });
+    });
 
+    initTips();
     initLive();
     initProvenance();
-    initBackToTop();
+    initTheme();
     render();
   }
 
   // Named so it is obvious at any call site that this is a test seam, not an
-  // API - same reasoning as Core's __modulesForTest. Nothing in this page
-  // reads it; tests/userscript-roi-math.mjs does, so the arithmetic that is
-  // asserted is the arithmetic that ships rather than a copy of it.
+  // API - same reasoning as Core's __modulesForTest.
   window.__PARTY_GOLD_ROI_FOR_TEST = {
-    buildProfile: buildProfile, goldPerAction: goldPerAction, marginal: marginal,
-    crossoverUtility: crossoverUtility, greedyPlan: greedyPlan,
+    buildProfile: buildProfile, goldPerAction: goldPerAction, keptPerAction: keptPerAction,
+    marginal: marginal, crossoverUtility: crossoverUtility, greedyPlan: greedyPlan,
     slotBoostPct: slotBoostPct, stepCost: stepCost,
-    personalGoldTotal: personalGoldTotal, pooledBase: pooledBase,
+    personalGoldTotal: personalGoldTotal, pooledBase: pooledBase
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
 </script>
