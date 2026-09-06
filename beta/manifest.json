@@ -1,15 +1,15 @@
 {
   "channel": "beta",
-  "generated": "2026-09-06T05:34:53.898Z",
+  "generated": "2026-09-06T09:48:34.205Z",
   "core": {
-    "version": "5.5.0-beta",
+    "version": "5.6.0-beta",
     "url": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/beta/apoz-core.user.js"
   },
   "modules": [
     {
       "id": "eta-tracker",
       "label": "Combat Slot ETA Tracker",
-      "version": "4.5.0-beta",
+      "version": "4.6.0-beta",
       "url": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/beta/eta-tracker.user.js",
       "notes": ""
     }

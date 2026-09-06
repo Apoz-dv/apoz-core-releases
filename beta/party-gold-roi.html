@@ -49,6 +49,48 @@
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.32);
 }
 
+
+/* THREE DARK DIRECTIONS. Pick one with the theme control, bottom right.
+   Each is a whole palette, not a hue rotation of the others:
+
+   ink    near-black, warm, almost no chroma in the greys. One accent, used
+          sparingly. Reads as a document at night. The quietest.
+   slate  cool blue-grey, higher contrast type, desaturated accent. The
+          "professional tool" register - closest to an IDE or Linear.
+   umber  deep warm brown-black with sepia-leaning text and brass accents.
+          The same product as the beach light theme, after dark. */
+
+:root[data-theme="dark"][data-dark="ink"],
+:root:not([data-theme="light"])[data-dark="ink"]{
+  --bg:#0e0e0f; --surface:#161617; --surface-2:#1c1c1e; --surface-3:#242427;
+  --border:#2a2a2d; --border-strong:#3c3c41;
+  --text:#eceae7; --text-muted:#9d9a95; --text-faint:#6a6763;
+  --accent:#9db38c; --accent-soft:#b6c9a7;
+  --warm:#d08a63; --warm-soft:#e0a483;
+  --success:#9db38c; --band:#211f1b; --current:#1c211c;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.4);
+}
+:root[data-theme="dark"][data-dark="slate"],
+:root:not([data-theme="light"])[data-dark="slate"]{
+  --bg:#0f1216; --surface:#171b21; --surface-2:#1e232a; --surface-3:#272d36;
+  --border:#2b323b; --border-strong:#3f4854;
+  --text:#f0f3f6; --text-muted:#9aa5b1; --text-faint:#69737f;
+  --accent:#7fb3a5; --accent-soft:#9ccabd;
+  --warm:#d79a6e; --warm-soft:#e6b391;
+  --success:#7fb3a5; --band:#221f1a; --current:#182420;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 10px 28px rgba(0,0,0,.38);
+}
+:root[data-theme="dark"][data-dark="umber"],
+:root:not([data-theme="light"])[data-dark="umber"]{
+  --bg:#14100c; --surface:#1c1712; --surface-2:#231d16; --surface-3:#2d251c;
+  --border:#332a20; --border-strong:#4a3d2e;
+  --text:#efe6d8; --text-muted:#a89a86; --text-faint:#7a6d5c;
+  --accent:#a3ad72; --accent-soft:#bcc48f;
+  --warm:#cf8f5c; --warm-soft:#e0a97c;
+  --success:#a3ad72; --band:#241d12; --current:#20241a;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.42);
+}
+
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0;background:var(--bg)}
@@ -233,10 +275,13 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
 .step .v{font-family:var(--num);font-weight:700;margin-left:auto;color:var(--warm);white-space:nowrap}
 .step.final .v{color:var(--success);font-size:.88rem}
 
-#theme{position:fixed;right:.9rem;bottom:.9rem;width:2.2rem;height:2.2rem;border-radius:50%;
-  background:var(--surface);border:1px solid var(--border);color:var(--text-muted);cursor:pointer;
-  display:flex;align-items:center;justify-content:center;font-size:.9rem;box-shadow:var(--shadow);z-index:60}
-#theme:hover{color:var(--accent);border-color:var(--accent)}
+#themeBar{position:fixed;right:.9rem;bottom:.9rem;display:flex;align-items:center;gap:.3rem;z-index:60}
+#themeBar button{background:var(--surface);border:1px solid var(--border);color:var(--text-muted);
+  cursor:pointer;border-radius:6px;height:1.9rem;padding:0 .5rem;font:inherit;font-size:.7rem;
+  box-shadow:var(--shadow);display:flex;align-items:center;gap:.3rem}
+#themeBar button:hover{color:var(--accent);border-color:var(--accent)}
+#themeBar button.on{color:var(--accent);border-color:var(--accent);background:var(--surface-2)}
+#themeBar .sw2{width:.65rem;height:.65rem;border-radius:50%;border:1px solid rgba(128,128,128,.35)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -325,25 +370,28 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
           <input type="number" id="sculpturesInput" min="0" max="100000" value="500">
           <label for="skillTreeInput">Skill tree %</label>
           <input type="number" id="skillTreeInput" min="0" max="100000" value="0">
-          <label for="petGoldModInput">Pet &quot;Gold&quot; mod %</label>
+          <label for="petGoldModInput">Pets' Gold %<span class="ico" tabindex="0" data-tip="Your pets' own income>gold modifier - the boost registry lists pets as a source of gold separately from the Added/Increased Base Gold rolls that feed gold.base. Both are real and they are not the same number.">i</span></label>
           <input type="number" id="petGoldModInput" min="0" max="100000" value="0">
           <p class="note" id="goldBoostNote"></p>
         </div>
       </div>
 
       <div class="card">
-        <div class="sec-label">Village<span class="rule"></span></div>
+        <div class="sec-label">Village<span class="rule"></span><span class="ico" tabindex="0" data-tip="Which of these reaches gold and which reaches Potion Effect is not a guess - it is tables/boost-sources.json, the game's own boost registry. Market and Exploration feed gold; Potent and Exploration feed Potion Effect; the two map tiles are separate multipliers on each.">i</span></div>
         <div class="fields">
           <label for="marketInput">Market %</label>
           <input type="number" id="marketInput" min="0" max="100000" value="320">
-          <label for="villageInput">Exploration / Potent %</label>
+          <label for="villageInput">Exploration %</label>
           <input type="number" id="villageInput" min="0" max="10000" value="40">
-          <label for="pvpGoldTileInput">PvP gold tile %</label>
+          <label for="potentInput">Potent %</label>
+          <input type="number" id="potentInput" min="0" max="10000" value="40">
+          <label for="pvpGoldTileInput">Gold tile %</label>
           <input type="number" id="pvpGoldTileInput" min="0" max="10000" value="20">
-          <label for="pvpPotionTileInput">PvP potion tile %</label>
+          <label for="pvpPotionTileInput">Potion Effect tile %</label>
           <input type="number" id="pvpPotionTileInput" min="0" max="10000" value="4">
-          <label for="taxInput">Tax %<span class="ico" tabindex="0" data-tip="Taken from party-action gold before you keep it. The game shows BOTH: a pre-tax gold-gained figure and the amount KEPT after tax. Set this and the sidebar shows both too, so you always compare like with like. Not a recorded fact in the core, so it starts at 0 and you enter your party's rate.">i</span></label>
+          <label for="taxInput">Tax %<span class="ico" tabindex="0" data-tip="The share of party gold the village takes before you keep it. Derived automatically when the tracker can see both the gross and kept figures on a battle card; otherwise type it once and it is remembered.">i</span></label>
           <input type="number" id="taxInput" min="0" max="100" step="0.1" value="0">
+          <p class="note">Exploration reaches both gold and Potion Effect; Potent reaches only Potion Effect.</p>
         </div>
       </div>
 
@@ -517,7 +565,12 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
 </div>
 
 <div id="tip" role="tooltip"></div>
-<button type="button" id="theme" aria-label="Toggle light and dark">&#9789;</button>
+<div id="themeBar" role="group" aria-label="Theme">
+  <button type="button" data-set="light" title="Beach — the light theme"><i class="sw2" style="background:#efe7d7"></i>Beach</button>
+  <button type="button" data-set="ink" title="Ink — near-black, warm, almost no chroma"><i class="sw2" style="background:#0e0e0f"></i>Ink</button>
+  <button type="button" data-set="slate" title="Slate — cool blue-grey, higher contrast"><i class="sw2" style="background:#0f1216"></i>Slate</button>
+  <button type="button" data-set="umber" title="Umber — warm brown-black, the beach theme after dark"><i class="sw2" style="background:#14100c"></i>Umber</button>
+</div>
 
 <script>
 /* GENERATED from data/ by userscripts/build.mjs — do not edit. */
@@ -548,7 +601,7 @@ window.APOZ_FACTS = (function () {
   var ORIGINAL_DEFAULTS = {
     combat: 50, utility: 30,
     enchants: 518, sculptures: 500, skillTree: 0, petGoldMod: 0,
-    market: 320, village: 40,
+    market: 320, village: 40, potent: 40,
     pvpGoldTile: 20, pvpPotionTile: 4, tax: 0, goldBoost: 0,
     partyMembers: 4, othersGoldBoost: 0,
     goldPotion: 10, event: 0,
@@ -563,7 +616,7 @@ window.APOZ_FACTS = (function () {
     combat: 'combatInput', utility: 'utilityInput',
     enchants: 'enchantsInput', sculptures: 'sculpturesInput',
     skillTree: 'skillTreeInput', petGoldMod: 'petGoldModInput',
-    market: 'marketInput', village: 'villageInput',
+    market: 'marketInput', village: 'villageInput', potent: 'potentInput',
     pvpGoldTile: 'pvpGoldTileInput', pvpPotionTile: 'pvpPotionTileInput', tax: 'taxInput',
     goldBoost: 'goldBoostInput',
     partyMembers: 'partyMembersInput', othersGoldBoost: 'othersGoldBoostInput',
@@ -650,7 +703,7 @@ window.APOZ_FACTS = (function () {
       enchants: raw.enchants/100, sculptures: raw.sculptures/100,
       skillTree: raw.skillTree/100, petGoldMod: raw.petGoldMod/100,
       market: raw.market/100, pvpGoldTile: raw.pvpGoldTile/100,
-      village: raw.village/100, pvpPotionTile: raw.pvpPotionTile/100,
+      village: raw.village/100, potent: raw.potent/100, pvpPotionTile: raw.pvpPotionTile/100,
       tax: Math.max(0, Math.min(100, raw.tax))/100,
       goldBoost: raw.goldBoost/100,
       useLiveGoldBoost: !!raw.useLiveGoldBoost && raw.goldBoost > 0,
@@ -707,13 +760,17 @@ window.APOZ_FACTS = (function () {
   // examined, so it allocates nothing and reads values hoisted in buildProfile.
   function partyMultAt(p, U){
     var pe = p.rolls.rawPotionEffect * (1 + slotBoostPct(U)/100);
-    var potionEffectTotal = (1 + pe + 2*p.village)*(1+p.pvpPotionTile) - 1;
+    var potionEffectTotal = (1 + pe + p.potent + p.village + p.skillTree)*(1+p.pvpPotionTile) - 1;
     var premium = p.vip + p.goldPotionBase*(1+potionEffectTotal);
     return (1+p.pooled)*(1+premium)*(1+p.event);
   }
   function potionMix(p, U){
     var pe = p.rolls.rawPotionEffect * (1 + slotBoostPct(U)/100);
-    var potionEffectBase = pe + p.village + p.village;
+    // Potent + Exploration + skill tree, per the registry's income>potionEffect
+    // base group. The old model added Exploration TWICE as a stand-in for
+    // "Exploration and Potent are about the same" - they are separate sources
+    // and only one of them also reaches gold.
+    var potionEffectBase = pe + p.potent + p.village + p.skillTree;
     var potionEffectTotal = (1+potionEffectBase)*(1+p.pvpPotionTile) - 1;
     var goldPotionBonus = p.goldPotionBase*(1+potionEffectTotal);
     return { petPotionEffect: pe, potionEffectBase: potionEffectBase,
@@ -876,7 +933,7 @@ window.APOZ_FACTS = (function () {
                          : 'me ' + P(personalGoldTotal(p)) + ' + ' + (p.partyMembers-1) + 'x' + P(p.othersGoldBoost))
        + (penalty !== 1 ? ' x' + penalty + ' (5-member penalty)' : ''), P(p.pooled)],
       ['Potion Effect', 'Utility pet, slot ' + U,
-       'rawPotionEffect x boost + village x2, x(1+pvpPotionTile)', P(mix.potionEffectTotal)],
+       'pet + potent + exploration + skill tree, x(1+tile)', P(mix.potionEffectTotal)],
       ['Gold Potion to Premium', 'goldPotionBase x (1+potionEffectTotal), feeds Premium with VIP',
        p.goldPotionBase.toFixed(2) + 'x(1+' + P(mix.potionEffectTotal) + ') + VIP ' + P(p.vip), P(mix.premium)],
       ['Party Gold Multiplier', '(1+Pooled)(1+Premium)(1+Event)',
@@ -1241,28 +1298,44 @@ window.APOZ_FACTS = (function () {
       : '<li>This copy was opened without the generated facts block.</li>';
   }
 
+  // Four choices, one of which is light. The dark ones are separate palettes
+  // rather than shades of each other, so switching is a real comparison.
+  var DARK_DEFAULT = 'ink';
   function initTheme(){
-    var btn = document.getElementById('theme');
+    var bar = document.getElementById('themeBar');
     var stored = null;
     try { stored = localStorage.getItem(THEME_KEY); } catch(e){}
-    if (stored) document.documentElement.setAttribute('data-theme', stored);
-    function label(){
-      var t = document.documentElement.getAttribute('data-theme');
-      var dark = t === 'dark' || (!t && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      btn.textContent = dark ? '☼' : '☽';
-      btn.title = dark ? 'Switch to light' : 'Switch to dark';
+    apply(stored || 'auto');
+
+    function apply(choice){
+      var root = document.documentElement;
+      if (choice === 'light'){
+        root.setAttribute('data-theme', 'light');
+        root.setAttribute('data-dark', DARK_DEFAULT);   // ready for the next dark pick
+      } else if (choice === 'auto'){
+        root.removeAttribute('data-theme');             // follow the OS
+        root.setAttribute('data-dark', DARK_DEFAULT);
+      } else {
+        root.setAttribute('data-theme', 'dark');
+        root.setAttribute('data-dark', choice);
+      }
+      mark(choice);
     }
-    btn.addEventListener('click', function(){
-      var cur = document.documentElement.getAttribute('data-theme');
-      // No stamp yet means we are following the OS; the first click flips away
-      // from whatever the OS is currently giving us.
-      if (!cur) cur = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-      var next = cur === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      try { localStorage.setItem(THEME_KEY, next); } catch(e){}
-      label();
+    function mark(choice){
+      var osDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var effective = choice === 'auto' ? (osDark ? DARK_DEFAULT : 'light') : choice;
+      var buttons = bar.querySelectorAll('button');
+      for (var i = 0; i < buttons.length; i++){
+        buttons[i].classList.toggle('on', buttons[i].getAttribute('data-set') === effective);
+      }
+    }
+    bar.addEventListener('click', function(e){
+      var btn = e.target.closest && e.target.closest('button[data-set]');
+      if (!btn) return;
+      var choice = btn.getAttribute('data-set');
+      apply(choice);
+      try { localStorage.setItem(THEME_KEY, choice); } catch(e2){}
     });
-    label();
   }
 
   function extend(which, by, to){

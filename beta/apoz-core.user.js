@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      5.5.0-beta
+// @version      5.6.0-beta
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "beta",
-    "version": "5.5.0-beta",
+    "version": "5.6.0-beta",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/beta/manifest.json"
   };
   // ==== END GENERATED ====
@@ -412,19 +412,46 @@
     //
     // The rule now: ALWAYS end up somewhere. A button in a slightly wrong place
     // is a cosmetic problem; a button nowhere is a broken script.
+    // STRUCTURAL, not tag-based. The previous version asked for <header>/<nav>
+    // and got neither: this game's top bar is divs, so every candidate missed
+    // and the menu fell back to floating. Tag names are a guess about how
+    // someone built their markup; "the element containing the most in-game nav
+    // links" is a fact about the page, and survives a redesign.
     function findAnchor() {
       const log = document.querySelector('a[href="/game/log"]');
       if (log) return { el: log, how: 'after the Game Log link', mode: 'after' };
+
+      // Group every in-game link by its parent and take the busiest group -
+      // that is the nav bar, whatever it is built from.
+      const links = [...document.querySelectorAll('a[href^="/game/"], a[href*="/game/"]')]
+        .filter((a) => a.offsetParent !== null);   // visible only; menus can be duplicated offscreen
+      if (links.length) {
+        const byParent = new Map();
+        for (const a of links) {
+          const parent = a.parentElement;
+          if (!parent) continue;
+          if (!byParent.has(parent)) byParent.set(parent, []);
+          byParent.get(parent).push(a);
+        }
+        let best = null;
+        for (const [parent, group] of byParent) {
+          // Prefer the group that is both largest and highest on the page: the
+          // top bar, not a sidebar or a footer list.
+          const top = parent.getBoundingClientRect().top;
+          const score = group.length * 1000 - top;
+          if (!best || score > best.score) best = { parent, group, score, top };
+        }
+        if (best && best.group.length >= 2) {
+          const last = best.group[best.group.length - 1];
+          return { el: last, how: `after the last of ${best.group.length} nav links`, mode: 'after' };
+        }
+        if (best) return { el: best.group[0], how: 'after the only nav link found', mode: 'after' };
+      }
 
       for (const a of document.querySelectorAll('header a, nav a')) {
         if (a.textContent.trim().toLowerCase() === 'game log') {
           return { el: a, how: 'after a link labelled Game Log', mode: 'after' };
         }
-      }
-      // Any in-game nav link will do - we only need to sit among them.
-      const gameLinks = document.querySelectorAll('header a[href^="/game/"], nav a[href^="/game/"]');
-      if (gameLinks.length) {
-        return { el: gameLinks[gameLinks.length - 1], how: 'after the last /game/ nav link', mode: 'after' };
       }
       const bar = document.querySelector('header, nav');
       if (bar) return { el: bar, how: 'appended to the nav bar', mode: 'append' };
@@ -466,19 +493,28 @@
       const style = document.createElement('style');
       style.id = STYLE_ID;
       style.textContent = `
-        #apoz-core-group { display: inline-flex; align-items: stretch; border: 2px solid var(--border);
-          border-radius: 5px; overflow: hidden; vertical-align: middle; font-family: ${CORE_FONT}; }
+        /* Shorter than the nav's own controls so it never sets the bar's
+           height, and styled as a raised control rather than an inset one -
+           the old 2px inset border read as "already pressed". */
+        #apoz-core-group { display: inline-flex; align-items: stretch; vertical-align: middle;
+          border-radius: 5px; overflow: hidden; font-family: ${CORE_FONT}; line-height: 1;
+          height: 22px; align-self: center; margin: 0 4px;
+          border: 1px solid var(--border);
+          background: linear-gradient(180deg, color-mix(in srgb, var(--card) 92%, #fff) 0%, var(--card) 100%);
+          box-shadow: 0 1px 0 rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.07); }
+        #apoz-core-group:hover { border-color: var(--primary); }
+        #apoz-core-group:active { box-shadow: inset 0 1px 2px rgba(0,0,0,.3); }
         /* Only when no nav bar could be found - see anchorGroup(). */
         #apoz-core-group.apoz-core-floating { position: fixed; top: 8px; right: 8px; z-index: 999998;
           background: var(--card); box-shadow: 0 4px 16px rgba(0,0,0,.4); }
         #apoz-core-btn { background: transparent; color: var(--primary); border: none;
-          font-weight: 600; letter-spacing: .01em; padding: 3px 8px; cursor: pointer; font-size: 12px;
-          -webkit-font-smoothing: antialiased; }
+          font-weight: 600; letter-spacing: .01em; padding: 0 8px; cursor: pointer; font-size: 11.5px;
+          height: 100%; -webkit-font-smoothing: antialiased; }
         #apoz-core-btn:hover { background: var(--input); }
         #apoz-core-quick-row { display: flex; }
         .apoz-core-quick-btn { background: none; border: none; border-left: 1px solid var(--border);
-          color: var(--foreground); opacity: .75; padding: 3px 7px; cursor: pointer; font-size: 11px;
-          font-weight: 500; position: relative; -webkit-font-smoothing: antialiased; }
+          color: var(--foreground); opacity: .75; padding: 0 7px; cursor: pointer; font-size: 11px;
+          height: 100%; font-weight: 500; position: relative; -webkit-font-smoothing: antialiased; }
         .apoz-core-quick-btn:hover { opacity: 1; background: var(--input); }
         .apoz-core-quick-btn-open { opacity: 1; background: var(--input); }
         @keyframes apoz-core-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
@@ -625,6 +661,9 @@
       });
 
       function openDropdown() {
+        // Cheap and local: never show a row the user has already acted on.
+        dropAlreadyInstalled();
+        renderUpdateRow();
         const rect = coreBtn.getBoundingClientRect();
         dropdown.style.left = `${rect.left}px`;
         dropdown.style.top = `${rect.bottom + 4}px`;
@@ -857,12 +896,34 @@
       try {
         const target = typeof tool.open === 'function' ? tool.open() : tool.href;
         if (!target) throw new Error('tool.open() returned nothing to open');
-        const w = window.open(target, '_blank', 'noopener');
-        // A blocked popup returns null. Say so rather than failing silently —
-        // the user clicked and nothing happened, which reads as a broken tool.
-        if (!w) console.warn(`[ApozCore] "${tool.label}" was blocked by the popup blocker. Allow popups for this site, or use the fallback link.`);
+
+        // A synthesised anchor click, not window.open. Chrome's popup blocker
+        // treats window.open from a handler that did work first (building a
+        // ~76KB blob) as suspicious, and blocks it; a real link activation is
+        // the gesture browsers are built to allow. This was blocking the ROI
+        // tool for at least one user.
+        const a = document.createElement('a');
+        a.href = target;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        // Belt and braces: if it was still blocked, put a clickable way out in
+        // front of the user rather than only in the console, which nobody has
+        // open at the moment they click a menu item.
+        setTimeout(() => {
+          if (document.hasFocus()) return;   // a new tab took focus: it worked
+          toast(`"${tool.label}" may have been blocked by the popup blocker.`, {
+            type: 'warn', duration: 12000, action: 'Open here',
+            onAction: () => { location.href = target; },
+          });
+        }, 400);
       } catch (err) {
         console.error(`[ApozCore] tool "${id}" failed to open:`, err);
+        toast(`Could not open "${tool.label}" — see the console.`, { type: 'error' });
       }
     }
 
@@ -1002,8 +1063,12 @@
       // Nothing to keep in sync, so nothing that can drift.
       if (!modules[mod.id].version) modules[mod.id].version = versionFromQueue(mod.id);
       if (!coreUi) buildUi();
+      // A module registering is new information about what is installed, so a
+      // remembered update for it may have just become stale.
+      dropAlreadyInstalled();
       renderQuickRow();
       renderDropdown();
+      renderUpdateRow();
       return modules[mod.id];
     }
 
@@ -1150,7 +1215,12 @@
     // the .user.js URL, which is what hands the actual install to TM. We never
     // fetch and eval a script ourselves. See DISTRIBUTION.md section 2.1.
     const UPDATE_KEY = 'apoz:core:updates';
-    const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+    // Every 2h rather than 6h. The check is one ~1KB fetch of a static file on
+    // a CDN, so the cost is not the network - it is that a stale answer makes
+    // the row untrustworthy. Twice a day was too rare to be believed.
+    // Deliberately NOT every page load: an idle game gets reloaded often, and
+    // a request per load is a request per load whatever its size.
+    const UPDATE_INTERVAL_MS = 2 * 60 * 60 * 1000;
     let updateState = { checkedAt: 0, available: [], error: null, checking: false };
 
     try {
@@ -1160,6 +1230,30 @@
         updateState.available = Array.isArray(savedUpd.available) ? savedUpd.available : [];
       }
     } catch (e) { /* first run, or storage blocked */ }
+
+    // REVALIDATE WHAT WE REMEMBERED, before showing any of it.
+    //
+    // The list is persisted so the menu has something to say before the first
+    // network check - but a remembered entry describes the world as it was
+    // hours ago, and the most likely thing to have happened since is that the
+    // user installed it. Showing "update available" for a version they are
+    // already running, until they press Check, is worse than showing nothing:
+    // it teaches them the row is untrustworthy.
+    //
+    // Costs no network: installedVersion() knows Core's own version, and each
+    // module's comes from its @version via the shim.
+    function dropAlreadyInstalled() {
+      const before = updateState.available.length;
+      updateState.available = updateState.available.filter((e) => {
+        const have = installedVersion(e.id);
+        // Keep entries for things not yet registered - a module may simply not
+        // have claimed yet at this point in the boot.
+        if (!have) return true;
+        return cmpVersion(e.to, have) > 0;
+      });
+      if (updateState.available.length !== before) persistUpdateState();
+      return before - updateState.available.length;
+    }
 
     // Numeric-segment compare, prerelease-aware enough for "5.0.1" vs
     // "5.0.1-beta": a version WITH a suffix sorts below the same version
@@ -1367,6 +1461,37 @@
     lines.push(`Numbers:   ${JSON.stringify(Core.numberProvenance())}`);
     lines.push('--- end ---');
     const text = lines.join('\n');
+    console.log(text);
+    return text;
+  };
+
+  // Paste-and-send helper for when the menu lands in the wrong place. It
+  // describes the page's real top-bar structure so the anchor can be aimed at
+  // it, instead of another round of guessing at tag names from a screenshot.
+  window.__apozWhereIsTheNav = function () {
+    const out = [];
+    const links = [...document.querySelectorAll('a')].filter((a) => a.offsetParent !== null);
+    out.push(`visible <a> on the page: ${links.length}`);
+    const game = links.filter((a) => (a.getAttribute('href') || '').includes('/game/'));
+    out.push(`...of which contain "/game/": ${game.length}`);
+    const groups = new Map();
+    for (const a of game) {
+      const parent = a.parentElement;
+      if (!parent) continue;
+      if (!groups.has(parent)) groups.set(parent, []);
+      groups.get(parent).push(a);
+    }
+    const ranked = [...groups.entries()]
+      .map(([el, g]) => ({ el, g, top: Math.round(el.getBoundingClientRect().top) }))
+      .sort((a, b) => b.g.length - a.g.length)
+      .slice(0, 3);
+    for (const r of ranked) {
+      out.push(`group of ${r.g.length} links, top=${r.top}px, parent=<${r.el.tagName.toLowerCase()}`
+        + `${r.el.id ? ' id=' + r.el.id : ''} class="${(r.el.className || '').toString().slice(0, 80)}">`);
+      out.push('   hrefs: ' + r.g.slice(0, 8).map((a) => a.getAttribute('href')).join(', '));
+    }
+    out.push(`<header> present: ${!!document.querySelector('header')}, <nav> present: ${!!document.querySelector('nav')}`);
+    const text = out.join('\n');
     console.log(text);
     return text;
   };
