@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      5.2.0-beta
+// @version      5.3.0-beta
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "beta",
-    "version": "5.2.0-beta",
+    "version": "5.3.0-beta",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/beta/manifest.json"
   };
   // ==== END GENERATED ====
@@ -157,6 +157,38 @@
         if (s && typeof s.numberLocale === 'string') { out = s.numberLocale; return true; }
         return false;
       });
+      return out;
+    }
+
+    // The character's MERGED MULTIPLIERS — the ~80-key object the game itself
+    // computes and the REST API exposes as /api/character/merged-multipliers.
+    //
+    // Worth a probe of its own because it is the single richest live source in
+    // the page: monsterGoldFlat and monsterGoldPercentage (the two terms that
+    // dominate gold.base), potionEffect, and the stacked income boosts. Reading
+    // them beats modelling them from an assumed pet roll.
+    //
+    // The predicate is two co-occurring, specifically-named numeric keys. That
+    // is deliberately narrow: 'gold' or 'level' alone match a dozen unrelated
+    // objects in this tree, and a wrong object here would feed plausible
+    // rubbish into a calculator that recommends what to spend a week of income
+    // on. Fewer than both keys present = no answer.
+    //
+    // SHAPE SOURCE: data/formulas/economy.json (gold.base, cross-confirmed
+    // against the REST endpoint) and data/formulas/party.json
+    // (party.mergedMultipliers.pools captured the whole object).
+    let mergedProbe;
+    function probeMergedMultipliers(force) {
+      if (mergedProbe !== undefined && !force) return mergedProbe;
+      let out = null;
+      walkFiber((cand) => {
+        if (typeof cand.monsterGoldFlat !== 'number') return false;
+        if (typeof cand.monsterGoldPercentage !== 'number') return false;
+        if (!isFinite(cand.monsterGoldFlat) || !isFinite(cand.monsterGoldPercentage)) return false;
+        out = cand;
+        return true;
+      });
+      mergedProbe = out;
       return out;
     }
 
@@ -428,6 +460,7 @@
         .apoz-core-row-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #e0483e; }
         .apoz-core-row-enabled .apoz-core-row-dot { background: #3ecf6a; }
         .apoz-core-row-enabled { font-weight: 600; }
+        .apoz-core-row-ver { margin-left: 6px; font-size: 9px; opacity: .45; font-weight: 400; }
         .apoz-core-row:not(.apoz-core-row-enabled) { opacity: .55; }
         .apoz-core-settings-icons { display: flex; gap: 4px; padding: 2px 8px 4px; }
         .apoz-core-icon-btn { background: var(--input); border: 1px solid var(--border); border-radius: 4px;
@@ -508,7 +541,8 @@
           <div id="apoz-core-tool-rows"></div>
         </div>
         <div class="apoz-core-separator"></div>
-        <div class="apoz-core-section-label">Settings</div>
+        <div class="apoz-core-section-label">Settings<span id="apoz-core-self-ver"
+          style="margin-left:auto;opacity:.45;text-transform:none;letter-spacing:normal"></span></div>
         <div class="apoz-core-settings-icons">
           <button class="apoz-core-icon-btn" type="button" disabled title="Open settings (coming soon)">⚙</button>
           <button class="apoz-core-icon-btn apoz-core-icon-active" type="button" id="apoz-core-disable-all"
@@ -564,6 +598,8 @@
 
       const updateBlock = dropdown.querySelector('#apoz-core-update-block');
       coreUi = { group, coreBtn, quickRow, dropdown, moduleRows, toolRows, toolsBlock, numFmtBtn, updateBlock };
+      const selfVer = dropdown.querySelector('#apoz-core-self-ver');
+      if (selfVer) selfVer.textContent = 'Core v' + RELEASE.version;
       renderNumberFormatRow();
       renderUpdateRow();
       anchorGroup();
@@ -604,6 +640,7 @@
             anchoredOnce = true;
             // the character settings are loaded by now - re-read the real convention
             probeCharacter(true);
+            probeMergedMultipliers(true); // same moment: the tree is finally populated
             if (refreshConvention()) {
               renderNumberFormatRow();
               for (const id of Object.keys(modules)) safely(id, 'onConventionChange');
@@ -793,9 +830,17 @@
         dot.className = 'apoz-core-row-dot';
         const label = document.createElement('span');
         label.textContent = mod.label;
-        if (mod.description || mod.version) {
-          row.title = [mod.description, mod.version ? `v${mod.version}` : null]
-            .filter(Boolean).join(' · ');
+        if (mod.description) row.title = mod.description;
+        // Visible, not just in a tooltip. Putting the version in the script's
+        // @name would have been the obvious way to surface it and is a trap:
+        // Tampermonkey identifies a script by @namespace + @name, so a name
+        // that changes every release installs a new script every release and
+        // updating stops working entirely.
+        if (mod.version) {
+          const ver = document.createElement('span');
+          ver.className = 'apoz-core-row-ver';
+          ver.textContent = 'v' + mod.version;
+          label.appendChild(ver);
         }
         row.appendChild(dot);
         row.appendChild(label);
@@ -1236,8 +1281,8 @@
       get __toolsForTest() { return tools; },
       // shared number handling - modules must use these, never their own parser
       parseNumber, formatNumber,
-      // live-state probes. Both refuse (return null / false) rather than guess.
-      walkFiber, probeCharacter,
+      // live-state probes. All refuse (return null / false) rather than guess.
+      walkFiber, probeCharacter, probeMergedMultipliers,
       getNumberConvention: getConvention,
       numberProvenance,
       setNumberLocaleOverride,

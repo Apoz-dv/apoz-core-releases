@@ -301,8 +301,11 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
       </div>
 
       <div class="card">
-        <div class="sec-label">Character boosts<span class="rule"></span></div>
+        <div class="sec-label">Character boosts<span class="rule"></span><span class="ico" tabindex="0" data-tip="If the userscript imported your stacked Gold Boost, that one measured number replaces the four components below and they grey out. It is the same figure as your Character > Boosts 'Gold Boost' card.">i</span></div>
         <div class="fields">
+          <label class="checkrow"><input type="checkbox" id="useLiveGoldBoostInput"><span>Use measured Gold Boost</span></label>
+          <label for="goldBoostInput">Measured total %</label>
+          <input type="number" id="goldBoostInput" min="0" max="10000000" step="0.01" value="0">
           <label for="enchantsInput">Enchants %</label>
           <input type="number" id="enchantsInput" min="0" max="100000" value="518">
           <label for="sculpturesInput">Sculpture grid %</label>
@@ -311,6 +314,7 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
           <input type="number" id="skillTreeInput" min="0" max="100000" value="0">
           <label for="petGoldModInput">Pet &quot;Gold&quot; mod %</label>
           <input type="number" id="petGoldModInput" min="0" max="100000" value="0">
+          <p class="note" id="goldBoostNote"></p>
         </div>
       </div>
 
@@ -532,7 +536,7 @@ window.APOZ_FACTS = (function () {
     combat: 50, utility: 30,
     enchants: 518, sculptures: 500, skillTree: 0, petGoldMod: 0,
     market: 320, village: 40,
-    pvpGoldTile: 20, pvpPotionTile: 4, tax: 0,
+    pvpGoldTile: 20, pvpPotionTile: 4, tax: 0, goldBoost: 0,
     partyMembers: 4, othersGoldBoost: 0,
     goldPotion: 10, event: 0,
     monsterLevel: 230000, characterLevel: 11500, actionsPerWeek: 6000,
@@ -540,7 +544,7 @@ window.APOZ_FACTS = (function () {
     observedGold: 0
   };
   var DEFAULTS = Object.assign({}, ORIGINAL_DEFAULTS);
-  var CHECK_DEFAULTS = { vip: true, othersSame: true, useLivePet: false };
+  var CHECK_DEFAULTS = { vip: true, othersSame: true, useLivePet: false, useLiveGoldBoost: false };
 
   var FIELD_IDS = {
     combat: 'combatInput', utility: 'utilityInput',
@@ -548,13 +552,15 @@ window.APOZ_FACTS = (function () {
     skillTree: 'skillTreeInput', petGoldMod: 'petGoldModInput',
     market: 'marketInput', village: 'villageInput',
     pvpGoldTile: 'pvpGoldTileInput', pvpPotionTile: 'pvpPotionTileInput', tax: 'taxInput',
+    goldBoost: 'goldBoostInput',
     partyMembers: 'partyMembersInput', othersGoldBoost: 'othersGoldBoostInput',
     goldPotion: 'goldPotionInput', event: 'eventInput',
     monsterLevel: 'monsterLevelInput', characterLevel: 'characterLevelInput', actionsPerWeek: 'actionsPerWeekInput',
     petILevel: 'petILevelInput', petTier: 'petTierInput', petRollPercentile: 'petRollPercentileInput',
     observedGold: 'observedGoldInput'
   };
-  var CHECK_IDS = { vip: 'vipInput', othersSame: 'othersSameInput', useLivePet: 'useLivePetInput' };
+  var CHECK_IDS = { vip: 'vipInput', othersSame: 'othersSameInput',
+                    useLivePet: 'useLivePetInput', useLiveGoldBoost: 'useLiveGoldBoostInput' };
   var VIP_PCT_WHEN_ON = 0.10;
 
   // ---- core facts, all generated into window.APOZ_FACTS by the build ----
@@ -613,7 +619,7 @@ window.APOZ_FACTS = (function () {
   // re-typed copy of it.
   function buildProfile(raw){
     raw = Object.assign({}, ORIGINAL_DEFAULTS,
-      { vipChecked: true, othersSame: true, useLivePet: false, livePet: null }, raw);
+      { vipChecked: true, othersSame: true, useLivePet: false, useLiveGoldBoost: false, livePet: null }, raw);
     raw.combat = clampLevel(raw.combat);
     raw.utility = clampLevel(raw.utility);
     if (raw.actionsPerWeek <= 0) raw.actionsPerWeek = 1;
@@ -633,6 +639,8 @@ window.APOZ_FACTS = (function () {
       market: raw.market/100, pvpGoldTile: raw.pvpGoldTile/100,
       village: raw.village/100, pvpPotionTile: raw.pvpPotionTile/100,
       tax: Math.max(0, Math.min(100, raw.tax))/100,
+      goldBoost: raw.goldBoost/100,
+      useLiveGoldBoost: !!raw.useLiveGoldBoost && raw.goldBoost > 0,
       monsterLevel: raw.monsterLevel, characterLevel: raw.characterLevel,
       actionsPerWeek: raw.actionsPerWeek,
       petILevel: raw.petILevel, petTier: raw.petTier, petRollPercentile: raw.petRollPercentile,
@@ -651,12 +659,25 @@ window.APOZ_FACTS = (function () {
     raw.vipChecked = document.getElementById(CHECK_IDS.vip).checked;
     raw.othersSame = document.getElementById(CHECK_IDS.othersSame).checked;
     raw.useLivePet = document.getElementById(CHECK_IDS.useLivePet).checked;
+    raw.useLiveGoldBoost = document.getElementById(CHECK_IDS.useLiveGoldBoost).checked;
     raw.livePet = livePetModifiers;
     return buildProfile(raw);
   }
 
   // ---- formula chain ----
+  // Your fully-stacked income>gold total — the number on the Character >
+  // Boosts "Gold Boost" card.
+  //
+  // When the userscript has measured it, that ONE number replaces the whole
+  // computation. It is deliberately not folded into any single component:
+  // adding a measured total to "Enchants" would double-count it against
+  // Market, Village and the rest, and the result would look plausible while
+  // being wrong by whatever those contribute.
+  //
+  // Village stays live even under the override, because it feeds Potion Effect
+  // as well as gold and only the gold half is being replaced.
   function personalGoldTotal(p){
+    if (p.useLiveGoldBoost) return p.goldBoost;
     var base = p.enchants + p.market + p.village + p.sculptures + p.skillTree + p.petGoldMod;
     return (1+base)*(1+p.pvpGoldTile) - 1;
   }
@@ -805,7 +826,10 @@ window.APOZ_FACTS = (function () {
     document.getElementById('rollPctOut').textContent = P(p.rolls.rawPct);
     document.getElementById('rollPotionOut').textContent = P(p.rolls.rawPotionEffect);
     document.getElementById('petSourceNote').textContent = p.rolls.source === 'live'
-      ? 'From your imported pets, before the slot boost.'
+      ? (livePetModifiers && livePetModifiers.atSlot !== undefined
+          ? 'Derived from your live merged modifiers at combat slot ' + livePetModifiers.atSlot +
+            ', with the slot boost divided back out. Exact if your pet is the only source of these.'
+          : 'From your imported pets, before the slot boost.')
       : 'Modelled from iLevel / tier / roll, before the slot boost.';
 
     // 5 x 0.8 = 4 exactly, so a 5th member who matches you is worth precisely
@@ -1071,7 +1095,7 @@ window.APOZ_FACTS = (function () {
     monsterLevel:    { label: 'Monster level',     field: 'monsterLevel' },
     partyMembers:    { label: 'Party members',     field: 'partyMembers' },
     othersGoldBoost: { label: 'Others’ boost', field: 'othersGoldBoost', suffix: '%' },
-    goldBoost:       { label: 'Your gold boost',   field: 'enchants', suffix: '%' },
+    goldBoost:       { label: 'Your gold boost',   field: 'goldBoost', suffix: '%' },
     actionsPerWeek:  { label: 'Actions / week',    field: 'actionsPerWeek' },
     tax:             { label: 'Village tax',       field: 'tax', suffix: '%' },
     observedGold:    { label: 'Observed gold/act', field: 'observedGold', scale: 1e-9, suffix: 'B' }
@@ -1085,7 +1109,8 @@ window.APOZ_FACTS = (function () {
     if (!src || !src.fields) return;
 
     if (src.pet && typeof src.pet.flat === 'number' && typeof src.pet.pct === 'number') {
-      livePetModifiers = { flat: src.pet.flat, pct: src.pet.pct, potion: src.pet.potion || 0 };
+      livePetModifiers = { flat: src.pet.flat, pct: src.pet.pct, potion: src.pet.potion || 0,
+                           atSlot: src.pet.atSlot };
     }
     var keys = Object.keys(src.fields).filter(function(k){
       return LIVE_MAP[k] && src.fields[k] && typeof src.fields[k].value === 'number' && isFinite(src.fields[k].value);
@@ -1125,6 +1150,7 @@ window.APOZ_FACTS = (function () {
     }
     if (liveData.fields.othersGoldBoost) document.getElementById(CHECK_IDS.othersSame).checked = false;
     if (livePetModifiers) document.getElementById(CHECK_IDS.useLivePet).checked = true;
+    if (liveData.fields.goldBoost) document.getElementById(CHECK_IDS.useLiveGoldBoost).checked = true;
     pendingScroll = true;
     requestRender();
   }
@@ -1138,6 +1164,19 @@ window.APOZ_FACTS = (function () {
     ['petILevel','petTier','petRollPercentile'].forEach(function(k){
       document.getElementById(FIELD_IDS[k]).disabled = on;
     });
+
+    // Same honesty rule for the gold-boost override: when one measured number
+    // is doing the work, the components must not look as though they are.
+    var gbCheck = document.getElementById(CHECK_IDS.useLiveGoldBoost);
+    var gbValue = num(document.getElementById(FIELD_IDS.goldBoost).value, 0);
+    gbCheck.disabled = !(gbValue > 0);
+    var gbOn = gbCheck.checked && gbValue > 0;
+    ['enchants','sculptures','skillTree','petGoldMod','market','pvpGoldTile'].forEach(function(k){
+      document.getElementById(FIELD_IDS[k]).disabled = gbOn;
+    });
+    document.getElementById('goldBoostNote').textContent = gbOn
+      ? 'Measured total in use — these components are ignored. Village still feeds Potion Effect.'
+      : (gbValue > 0 ? 'A measured total is available; tick to use it instead of the components.' : '');
   }
 
   function initProvenance(){
