@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      5.6.0-beta
+// @version      5.6.1-beta
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "beta",
-    "version": "5.6.0-beta",
+    "version": "5.6.1-beta",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/beta/manifest.json"
   };
   // ==== END GENERATED ====
@@ -458,11 +458,6 @@
       return null;
     }
 
-    // Kept for the tests and any caller that only wants the preferred anchor.
-    function findGameLogLink() {
-      const found = findAnchor();
-      return found && found.mode === 'after' ? found.el : null;
-    }
 
     let anchorHow = null;
     function anchorGroup() {

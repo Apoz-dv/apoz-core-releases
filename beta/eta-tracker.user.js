@@ -2,7 +2,7 @@
 // @name         Apoz Core: Combat Slot ETA Tracker
 // @namespace    apoz-core
 // @author       Apoz
-// @version      4.6.0-beta
+// @version      4.6.1-beta
 // @description  Apoz Core module (requires "Apoz Core"). Read-only overlay: estimates time until the Combat pet slot upgrade is affordable from your live gold and the exact upgrade-cost formula (no need to sit on the Pets page), rings a gentle alarm - and optionally a desktop notification - when it is, and stays accurate in a backgrounded tab. Ships the Party Gold ROI calculator. No auto-clicking.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -267,10 +267,6 @@
     return null;
   }
 
-  function scanPartyGoldPerAction() {
-    const card = scanPartyGoldCard();
-    return card ? card.kept : null;
-  }
 
   // ---- Ambient sidebar stat (party actions remaining) ----
   // Polled slowly and scoped to the sidebar - this is "nice to have" context,
@@ -651,10 +647,6 @@
     return out;
   }
 
-  function partyMemberCountFromFiber() {
-    const party = partyFromFiber();
-    return party ? party.count : null;
-  }
 
   // The pet's own rolled modifiers, recovered from the merged totals.
   //
