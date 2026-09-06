@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      5.1.0-beta
+// @version      5.1.1-beta
 // @description  The shell every Apoz module plugs into: the nav launcher, the module and tool registries, shared number handling for the game's per-character decimal convention, and update checking. Install this first — on its own it adds a menu and nothing else.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "beta",
-    "version": "5.1.0-beta",
+    "version": "5.1.1-beta",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/beta/manifest.json"
   };
   // ==== END GENERATED ====
@@ -448,6 +448,8 @@
           cursor: pointer; }
         .apoz-core-update-btn:hover { background: var(--popover); }
         .apoz-core-update-btn:disabled { opacity: .5; cursor: default; }
+        .apoz-core-update-go { margin-left: auto; font-size: 10px; opacity: .8; }
+        .apoz-core-update-sent { opacity: .55; }
         #apoz-core-toasts { position: fixed; right: 14px; bottom: 14px; z-index: 1000000;
           display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
           pointer-events: none; font: 12px ${CORE_FONT}; }
@@ -518,7 +520,7 @@
           <span>Numbers</span>
           <button class="apoz-core-numfmt-btn" type="button" id="apoz-core-numfmt-btn"></button>
         </div>
-        <div class="apoz-core-update-row" id="apoz-core-update-row"></div>
+        <div id="apoz-core-update-block"></div>
       `;
       document.body.appendChild(dropdown);
       const moduleRows = dropdown.querySelector('#apoz-core-module-rows');
@@ -558,8 +560,8 @@
         closeDropdown();
       });
 
-      const updateRow = dropdown.querySelector('#apoz-core-update-row');
-      coreUi = { group, coreBtn, quickRow, dropdown, moduleRows, toolRows, toolsBlock, numFmtBtn, updateRow };
+      const updateBlock = dropdown.querySelector('#apoz-core-update-block');
+      coreUi = { group, coreBtn, quickRow, dropdown, moduleRows, toolRows, toolsBlock, numFmtBtn, updateBlock };
       renderNumberFormatRow();
       renderUpdateRow();
       anchorGroup();
@@ -569,24 +571,52 @@
     // The nav is client-rendered, so it usually does not exist when this runs.
     // Waiting on the 3s heartbeat made the bar visibly late; this injects on
     // the very mutation that produces the anchor, then stops watching.
+    //
+    // REPORTED 2026-09-06: "the script sometimes doesn't load". Recovery after
+    // the SPA re-renders the nav and detaches our group was the 3s interval —
+    // and a HIDDEN TAB clamps that to roughly once a minute. Open the game in a
+    // background tab, or leave it while it re-routes, and the button can be
+    // missing for a minute with nothing wrong. Same failure family as S8: work
+    // that only happens on a timer stops happening when the tab is not looked
+    // at. Three cheap non-timer paths now cover it.
     let anchorObserver = null;
+    let anchoredOnce = false;
     function watchForAnchor() {
       if (anchorObserver || !document.body) return;
-      if (coreUi && document.body.contains(coreUi.group)) return;
+      // STAYS ARMED for the life of the page, rather than disconnecting once
+      // anchored. Disconnecting meant an SPA nav swap had no fast recovery at
+      // all - only the 3s heartbeat, which is the throttled path this whole
+      // change exists to stop depending on. Debounced to 250ms per
+      // INSTRUMENTATION.md 4.4: childList+subtree on a busy idle game fires
+      // constantly, and the rule there is not stylistic - an unthrottled
+      // body-wide observer was measured hanging the tab.
+      let anchorDebounce = null;
       anchorObserver = new MutationObserver(() => {
-        anchorGroup();
-        if (coreUi && document.body.contains(coreUi.group)) {
-          anchorObserver.disconnect();
-          anchorObserver = null;
-          // the character settings are loaded by now - re-read the real convention
-          probeCharacter(true); // same moment the character data is finally live
-          if (refreshConvention()) {
-            renderNumberFormatRow();
-            for (const id of Object.keys(modules)) safely(id, 'onConventionChange');
+        if (anchorDebounce) return;
+        anchorDebounce = setTimeout(() => {
+          anchorDebounce = null;
+          if (!coreUi) return;
+          const wasAttached = document.body.contains(coreUi.group);
+          anchorGroup();
+          if (!wasAttached && document.body.contains(coreUi.group) && !anchoredOnce) {
+            anchoredOnce = true;
+            // the character settings are loaded by now - re-read the real convention
+            probeCharacter(true);
+            if (refreshConvention()) {
+              renderNumberFormatRow();
+              for (const id of Object.keys(modules)) safely(id, 'onConventionChange');
+            }
           }
-        }
+        }, 250);
       });
       anchorObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // Re-attach immediately, without waiting for the next tick of anything.
+    function reanchorNow() {
+      if (!coreUi || !document.body) return;
+      anchorGroup();
+      if (!document.body.contains(coreUi.group)) watchForAnchor();
     }
 
     // INCREMENTAL, not rebuild-every-time. With one module the difference was
@@ -644,24 +674,52 @@
         : `Forced to decimal "${c.decimal}", thousands "${c.group}". Click to cycle / return to auto.`;
     }
 
-    // One row, three states. The manual button reports "up to date" out loud
-    // on purpose — a check button that produces no visible change when there
-    // is nothing to report is indistinguishable from a broken one.
+    // ONE ROW PER AVAILABLE UPDATE, plus a status line.
+    //
+    // The first version summarised "2 updates available" into a single row and
+    // opened available[0] — so a user with a Core AND a module update was sent
+    // to one of them and had no way to reach the other. Tampermonkey installs
+    // one script per visit to one .user.js URL; there is no combined install,
+    // so the UI has to offer each one.
     function renderUpdateRow() {
-      if (!coreUi || !coreUi.updateRow) return;
-      const row = coreUi.updateRow;
-      row.innerHTML = '';
-      const label = document.createElement('span');
+      if (!coreUi || !coreUi.updateBlock) return;
+      const block = coreUi.updateBlock;
+      block.innerHTML = '';
+
       const n = updateState.available.length;
-      row.className = 'apoz-core-update-row' + (n ? ' apoz-core-update-has' : ' apoz-core-update-none');
+      for (const entry of updateState.available) {
+        const row = document.createElement('div');
+        row.className = 'apoz-core-update-row apoz-core-update-has';
+        row.title = entry.notes
+          ? `${entry.notes}\nOpens the script so Tampermonkey can install it.`
+          : `${entry.label}: ${entry.from} → ${entry.to}. Opens the script so Tampermonkey can install it.`;
+        const label = document.createElement('span');
+        label.textContent = `${entry.label} ${entry.to}`;
+        const go = document.createElement('span');
+        go.className = 'apoz-core-update-go';
+        go.textContent = 'Update ↗';
+        row.appendChild(label);
+        row.appendChild(go);
+        row.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openUpdate(entry);
+          // Mark it visited rather than removing it: the install is
+          // Tampermonkey's to complete, and pretending it is done before the
+          // user has confirmed the prompt would lose the other rows.
+          row.classList.add('apoz-core-update-sent');
+          go.textContent = 'Opened';
+        });
+        block.appendChild(row);
+      }
+
+      const status = document.createElement('div');
+      status.className = 'apoz-core-update-row apoz-core-update-none';
+      const label = document.createElement('span');
       label.textContent = updateState.checking ? 'Checking…'
-        : n ? (n === 1
-            ? `${updateState.available[0].label} ${updateState.available[0].to} available`
-            : `${n} updates available`)
+        : n ? (n === 1 ? '1 update — install it above' : `${n} updates — install each above`)
         : updateState.error ? `Updates: ${updateState.error}`
         : updateState.checkedAt ? 'Up to date' : 'Updates not checked yet';
-      if (n === 1 && updateState.available[0].notes) label.title = updateState.available[0].notes;
-      row.appendChild(label);
+      status.appendChild(label);
 
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -676,17 +734,8 @@
           }
         });
       });
-      row.appendChild(btn);
-
-      if (n) {
-        // Clicking the row hands the .user.js URL to Tampermonkey, which is
-        // the only thing that can actually perform the update.
-        row.addEventListener('click', (e) => {
-          if (e.target === btn) return;
-          e.stopPropagation();
-          openUpdate(updateState.available[0]);
-        });
-      }
+      status.appendChild(btn);
+      block.appendChild(status);
     }
 
     function renderToolRows() {
@@ -1073,13 +1122,42 @@
       window.open(entry.url, '_blank', 'noopener');
     }
 
-    // safety net only - the observer above is the fast path. This catches the
-    // case where an SPA re-render detaches the group after we anchored.
-    setInterval(() => {
-      if (!coreUi) return;
-      anchorGroup();
-      if (!document.body.contains(coreUi.group)) watchForAnchor();
-    }, 3000);
+    // Coming back to the tab is the moment it matters, and the moment a
+    // throttled timer has not fired. Costs nothing while hidden.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reanchorNow();
+    });
+    window.addEventListener('pageshow', reanchorNow);
+    window.addEventListener('focus', reanchorNow);
+
+    // An SPA route change replaces the nav, which is exactly when our group
+    // gets detached. history.pushState fires no event of its own, so it is
+    // wrapped — cheaply, once, and it still calls through.
+    //
+    // WHOLLY OPTIONAL, AND GUARDED AS SUCH. This is a recovery nicety; an
+    // environment where history is absent, frozen, or already wrapped by
+    // something protective must not take the entire Core down at init, because
+    // the symptom of that is indistinguishable from the bug this is fixing.
+    try {
+      if (typeof history === 'object' && history) {
+        for (const method of ['pushState', 'replaceState']) {
+          const original = history[method];
+          if (typeof original !== 'function') continue;
+          history[method] = function () {
+            const result = original.apply(this, arguments);
+            setTimeout(reanchorNow, 0);
+            return result;
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[ApozCore] could not hook history for re-anchoring; the heartbeat still covers it.', e);
+    }
+    window.addEventListener('popstate', () => setTimeout(reanchorNow, 0));
+
+    // safety net only - everything above is the fast path. This catches an SPA
+    // re-render that produced no navigation and no mutation we saw.
+    setInterval(reanchorNow, 3000);
     setInterval(updateTitleBadge, 5000);
 
     // Update check rides the existing 5s badge tick rather than owning a timer:
