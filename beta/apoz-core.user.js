@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      5.3.0-beta
+// @version      5.4.0-beta
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "beta",
-    "version": "5.3.0-beta",
+    "version": "5.4.0-beta",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/beta/manifest.json"
   };
   // ==== END GENERATED ====
@@ -401,19 +401,63 @@
       try { localStorage.setItem(REG_KEY, JSON.stringify({ enabledOrder })); } catch (e) { /* ignore */ }
     }
 
-    function findGameLogLink() {
-      const byHref = document.querySelector('a[href="/game/log"]');
-      if (byHref) return byHref;
-      for (const a of document.querySelectorAll('header a')) {
-        if (a.textContent.trim().toLowerCase() === 'game log') return a;
+    // WHERE THE BUTTON GOES, in descending order of preference.
+    //
+    // REPORTED 2026-09-06: "the script still doesn't load". It was loading. It
+    // had no anchor: the old code looked for exactly one link, and if that link
+    // was not there it inserted the group NOWHERE and returned silently. Core
+    // running perfectly while being invisible is indistinguishable, from the
+    // outside, from Core not running at all - and it is a worse failure,
+    // because everything that reports health says it is fine.
+    //
+    // The rule now: ALWAYS end up somewhere. A button in a slightly wrong place
+    // is a cosmetic problem; a button nowhere is a broken script.
+    function findAnchor() {
+      const log = document.querySelector('a[href="/game/log"]');
+      if (log) return { el: log, how: 'after the Game Log link', mode: 'after' };
+
+      for (const a of document.querySelectorAll('header a, nav a')) {
+        if (a.textContent.trim().toLowerCase() === 'game log') {
+          return { el: a, how: 'after a link labelled Game Log', mode: 'after' };
+        }
       }
+      // Any in-game nav link will do - we only need to sit among them.
+      const gameLinks = document.querySelectorAll('header a[href^="/game/"], nav a[href^="/game/"]');
+      if (gameLinks.length) {
+        return { el: gameLinks[gameLinks.length - 1], how: 'after the last /game/ nav link', mode: 'after' };
+      }
+      const bar = document.querySelector('header, nav');
+      if (bar) return { el: bar, how: 'appended to the nav bar', mode: 'append' };
       return null;
     }
 
+    // Kept for the tests and any caller that only wants the preferred anchor.
+    function findGameLogLink() {
+      const found = findAnchor();
+      return found && found.mode === 'after' ? found.el : null;
+    }
+
+    let anchorHow = null;
     function anchorGroup() {
-      if (!coreUi || document.body.contains(coreUi.group)) return;
-      const link = findGameLogLink();
-      if (link) link.insertAdjacentElement('afterend', coreUi.group);
+      if (!coreUi || !document.body || document.body.contains(coreUi.group)) return;
+      const found = findAnchor();
+      if (found) {
+        if (found.mode === 'append') found.el.appendChild(coreUi.group);
+        else found.el.insertAdjacentElement('afterend', coreUi.group);
+        coreUi.group.classList.remove('apoz-core-floating');
+      } else {
+        // LAST RESORT, and the whole point of this function: float it. The nav
+        // may not have rendered yet, or may have changed shape entirely. Either
+        // way the menu stays reachable, and the observer will move it into the
+        // bar the moment one appears.
+        document.body.appendChild(coreUi.group);
+        coreUi.group.classList.add('apoz-core-floating');
+      }
+      const how = found ? found.how : 'floating (no nav bar found)';
+      if (how !== anchorHow) {
+        anchorHow = how;
+        console.info(`[ApozCore] menu anchored: ${how}`);
+      }
     }
 
     function buildUi() {
@@ -424,6 +468,9 @@
       style.textContent = `
         #apoz-core-group { display: inline-flex; align-items: stretch; border: 2px solid var(--border);
           border-radius: 5px; overflow: hidden; vertical-align: middle; font-family: ${CORE_FONT}; }
+        /* Only when no nav bar could be found - see anchorGroup(). */
+        #apoz-core-group.apoz-core-floating { position: fixed; top: 8px; right: 8px; z-index: 999998;
+          background: var(--card); box-shadow: 0 4px 16px rgba(0,0,0,.4); }
         #apoz-core-btn { background: transparent; color: var(--primary); border: none;
           font-weight: 600; letter-spacing: .01em; padding: 3px 8px; cursor: pointer; font-size: 12px;
           -webkit-font-smoothing: antialiased; }
@@ -1291,6 +1338,38 @@
     };
   })();
   window.__ApozCore = Core;
+
+  // One command to answer "why is it not there?", because every previous
+  // round of this has been guesswork over chat. Deliberately a global and
+  // deliberately plain text: it is for pasting back, not for programs.
+  window.__apozDiag = function () {
+    const q = Array.isArray(window.__apozModules) ? window.__apozModules : [];
+    const group = document.getElementById('apoz-core-group');
+    const lines = [
+      '--- Apoz Core diagnostic ---',
+      `Core:      v${Core.version}  release ${Core.release.channel} ${Core.release.version}`,
+      `Menu:      ${group ? (document.body.contains(group) ? 'present in the page' : 'built but detached') : 'NOT BUILT'}`,
+      `Anchor:    ${group && group.classList.contains('apoz-core-floating') ? 'floating (no nav bar found)' : 'in the nav bar'}`,
+      `Nav link:  ${document.querySelector('a[href="/game/log"]') ? 'found' : 'NOT FOUND'}`,
+      `Modules:   ${q.length} queued`,
+    ];
+    for (const e of q) {
+      lines.push(`  - ${e.id} v${e.version || '?'}`
+        + ` ${e.claimed ? 'claimed' : 'NOT CLAIMED'}`
+        + `${e.failed ? ' FAILED TO START' : ''}${e.duplicate ? ' (duplicate, not run)' : ''}`);
+    }
+    const reg = Core.__modulesForTest;
+    lines.push(`Registered: ${Object.keys(reg).join(', ') || 'none'}`);
+    for (const id of Object.keys(reg)) {
+      lines.push(`  - ${id}: ${reg[id].enabled ? 'enabled' : 'disabled'}`);
+    }
+    lines.push(`Tools:     ${Object.keys(Core.__toolsForTest).join(', ') || 'none'}`);
+    lines.push(`Numbers:   ${JSON.stringify(Core.numberProvenance())}`);
+    lines.push('--- end ---');
+    const text = lines.join('\n');
+    console.log(text);
+    return text;
+  };
   Core.claim(); // pick up any module that loaded before this script did
 
 })();

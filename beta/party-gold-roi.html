@@ -2,7 +2,7 @@
 <title>Party Gold ROI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600;700&display=swap">
 <style>
 /* ---------------------------------------------------------------------------
    THEME. Light is a warm beach/sand palette, not white - soft on the eyes but
@@ -21,6 +21,12 @@
   --mono:'IBM Plex Mono',ui-monospace,monospace;
   --sans:'IBM Plex Sans',system-ui,sans-serif;
   --display:'Big Shoulders Display','Arial Narrow',sans-serif;
+  /* NUMBERS. A humanist sans rather than the mono face: Source Sans 3 sits
+     close to Segoe UI, reads better than a monospace at these sizes, and has
+     real tabular figures - which is the whole reason a number face has to be
+     chosen deliberately instead of inherited. Every numeric context below
+     pairs it with font-variant-numeric: tabular-nums so columns still line up. */
+  --num:'Source Sans 3','Segoe UI','Open Sans',system-ui,sans-serif;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
@@ -61,27 +67,27 @@ h1{font-family:var(--display);font-weight:700;font-size:1.7rem;margin:0 0 .3rem;
 .sub{color:var(--text-muted);font-size:.78rem;margin:0 0 1rem;line-height:1.45}
 
 /* ---- sidebar ---- */
-.sidebar-inner{display:flex;flex-direction:column;gap:.7rem}
+.sidebar-inner{display:flex;flex-direction:column;gap:.55rem}
 @media (min-width:1101px){
   .sidebar-inner{position:sticky;top:1.25rem;max-height:calc(100vh - 2.5rem);
     overflow-y:auto;overflow-x:hidden;padding-right:.45rem;scrollbar-width:thin}
   .sidebar-inner::-webkit-scrollbar{width:8px}
   .sidebar-inner::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:4px}
 }
-.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;box-shadow:var(--shadow)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.55rem .7rem;box-shadow:var(--shadow)}
 
-.sec-label{font-family:var(--mono);font-size:.61rem;letter-spacing:.09em;text-transform:uppercase;
+.sec-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.09em;text-transform:uppercase;
   color:var(--text-faint);display:flex;align-items:center;gap:.3rem;margin:0 0 .5rem}
 .sec-label .rule{flex:1;height:1px;background:var(--border)}
 
 /* ---- compact, aligned inputs ---- */
-.fields{display:grid;grid-template-columns:1fr 5.6rem;align-items:center;gap:.3rem .5rem}
-.fields label{font-size:.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+.fields{display:grid;grid-template-columns:1fr 5.2rem;align-items:center;gap:.16rem .45rem}
+.fields label{font-size:.73rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   display:flex;align-items:center;gap:.25rem;min-width:0}
 .fields input[type=number],.fields input[type=text]{
-  font-family:var(--mono);font-size:.8rem;font-weight:600;color:var(--text);
-  background:var(--surface-2);border:1px solid var(--border);border-radius:5px;
-  padding:.22rem .35rem;width:100%;min-width:0;font-variant-numeric:tabular-nums;text-align:right}
+  font-family:var(--num);font-size:.8rem;font-weight:600;color:var(--text);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:4px;
+  padding:.1rem .3rem;width:100%;min-width:0;font-variant-numeric:tabular-nums;text-align:right;line-height:1.35}
 .fields input:focus{outline:2px solid var(--accent);outline-offset:1px}
 .fields input:disabled{opacity:.45;cursor:not-allowed;background:var(--surface-3)}
 .checkrow{grid-column:1 / -1;display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--text-muted);cursor:pointer;user-select:none}
@@ -104,7 +110,7 @@ h1{font-family:var(--display);font-weight:700;font-size:1.7rem;margin:0 0 .3rem;
 .result{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;padding:.22rem 0;font-size:.78rem}
 .result + .result{border-top:1px dashed var(--border)}
 .result .k{color:var(--text-muted)}
-.result .v{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+.result .v{font-family:var(--num);font-weight:600;font-variant-numeric:tabular-nums}
 .result.hero .v{font-family:var(--display);font-size:1.5rem;font-weight:700;color:var(--warm);line-height:1}
 .result .v.good{color:var(--success)} .result .v.off{color:var(--warm)}
 
@@ -112,10 +118,10 @@ h1{font-family:var(--display);font-weight:700;font-size:1.7rem;margin:0 0 .3rem;
 .live{border-left:3px solid var(--border-strong)}
 .live.on{border-left-color:var(--success)}
 .live-head{display:flex;justify-content:space-between;align-items:center;gap:.4rem;margin-bottom:.4rem}
-.live-when{font-family:var(--mono);font-size:.62rem;color:var(--text-faint)}
+.live-when{font-family:var(--num);font-size:.62rem;color:var(--text-faint)}
 .live-list{display:grid;grid-template-columns:1fr auto;gap:.1rem .5rem;font-size:.72rem;margin-bottom:.4rem}
 .live-list .k{color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.live-list .v{font-family:var(--mono);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.live-list .v{font-family:var(--num);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
 .live-empty{font-size:.72rem;color:var(--text-muted);line-height:1.45}
 
 /* ---- tooltips: fixed-position, so a scroll container cannot clip them ---- */
@@ -151,9 +157,9 @@ h3.sec:first-child{margin-top:0}
 .box.win{border-color:var(--success);box-shadow:inset 3px 0 0 var(--success),var(--shadow)}
 .box h5{margin:0 0 .2rem;font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);display:flex;align-items:center;gap:.35rem}
 .box .big{font-family:var(--display);font-size:1.5rem;color:var(--warm);line-height:1.05}
-.box .unit{font-family:var(--mono);font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em}
+.box .unit{font-family:var(--num);font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em}
 .box dl{display:grid;grid-template-columns:auto 1fr;gap:.05rem .6rem;margin:.45rem 0 0;font-size:.72rem}
-.box dt{color:var(--text-faint)} .box dd{margin:0;font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.box dt{color:var(--text-faint)} .box dd{margin:0;font-family:var(--num);text-align:right;font-variant-numeric:tabular-nums}
 .box p{margin:.35rem 0 0;font-size:.72rem;color:var(--text-muted)}
 .tag{font-family:var(--sans);font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid currentColor;border-radius:3px;padding:0 .22rem}
 .tag.win{color:var(--success)}
@@ -165,7 +171,7 @@ h3.sec:first-child{margin-top:0}
 
 .strip{display:flex;gap:2px;flex-wrap:wrap;margin-bottom:.5rem}
 .cell{width:1.5rem;height:1.5rem;border-radius:4px;display:flex;align-items:center;justify-content:center;
-  font-family:var(--mono);font-size:.55rem;font-weight:600;color:#fff}
+  font-family:var(--num);font-size:.55rem;font-weight:600;color:#fff}
 .cell.c{background:var(--warm)} .cell.u{background:var(--accent)}
 .cell.flip{outline:2px solid var(--success);outline-offset:1px}
 .legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.7rem;color:var(--text-muted);margin-top:.4rem}
@@ -184,7 +190,7 @@ table.roi thead tr.grp th{top:0;font-size:.58rem;letter-spacing:.09em;color:var(
   border-bottom:1px solid var(--border);background:var(--surface-3)}
 table.roi thead tr.cols th{top:1.4rem;border-bottom:1px solid var(--border)}
 table.roi thead th:first-child{text-align:left}
-table.roi tbody td{text-align:right;padding:.24rem .5rem;font-family:var(--mono);font-variant-numeric:tabular-nums;
+table.roi tbody td{text-align:right;padding:.22rem .5rem;font-family:var(--num);font-variant-numeric:tabular-nums;
   border-top:1px solid var(--border);white-space:nowrap}
 table.roi tbody td.lvl{text-align:left;color:var(--text-muted)}
 table.roi tbody td.sep,table.roi thead th.sep{border-left:1px solid var(--border)}
@@ -193,8 +199,8 @@ table.roi tbody tr.band{background:var(--band)}
 table.roi tbody tr.current{background:var(--current);font-weight:600}
 table.roi tbody tr.current td{border-top:2px solid var(--accent);border-bottom:2px solid var(--accent)}
 .tblfoot{display:flex;justify-content:flex-end;align-items:center;gap:.35rem;padding:.45rem .1rem 0;flex-wrap:wrap}
-.tblfoot .count{margin-right:auto;font-family:var(--mono);font-size:.66rem;color:var(--text-faint)}
-.tblfoot input{font-family:var(--mono);font-size:.72rem;width:5rem;padding:.25rem .35rem;text-align:right;
+.tblfoot .count{margin-right:auto;font-family:var(--num);font-size:.66rem;color:var(--text-faint)}
+.tblfoot input{font-family:var(--num);font-size:.72rem;width:5rem;padding:.25rem .35rem;text-align:right;
   background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text)}
 
 details.panel summary{cursor:pointer;font-weight:600;font-size:.82rem;list-style:none;display:flex;align-items:center;gap:.4rem}
@@ -214,10 +220,10 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
 .step{position:relative;margin-bottom:.45rem;display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;font-size:.78rem}
 .step-n{position:absolute;left:-1.5rem;top:.05rem;width:1.05rem;height:1.05rem;border-radius:50%;
   background:var(--surface);border:1.5px solid var(--border-strong);display:flex;align-items:center;justify-content:center;
-  font-family:var(--mono);font-weight:600;font-size:.58rem;color:var(--text-muted)}
+  font-family:var(--num);font-weight:600;font-size:.58rem;color:var(--text-muted)}
 .step .l{color:var(--text);font-weight:600}
 .step .e{font-family:var(--mono);font-size:.68rem;color:var(--text-faint);flex:1 1 auto}
-.step .v{font-family:var(--mono);font-weight:700;margin-left:auto;color:var(--warm);white-space:nowrap}
+.step .v{font-family:var(--num);font-weight:700;margin-left:auto;color:var(--warm);white-space:nowrap}
 .step.final .v{color:var(--success);font-size:.88rem}
 
 #theme{position:fixed;right:.9rem;bottom:.9rem;width:2.2rem;height:2.2rem;border-radius:50%;
