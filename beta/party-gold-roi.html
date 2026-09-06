@@ -14,9 +14,9 @@
   --bg:#efe7d7; --surface:#faf5ec; --surface-2:#f1e8d8; --surface-3:#e7dcc7;
   --border:#d8cbb2; --border-strong:#c3b193;
   --text:#33291d; --text-muted:#6b5c48; --text-faint:#94836c;
-  --accent:#1d6f6a; --accent-soft:#2a8f88;
-  --warm:#b5541f; --warm-soft:#d2691e;
-  --success:#3f7d4e; --band:#f6e9cd; --current:#dcebe6;
+  --accent:#4a6741; --accent-soft:#5f8352;      /* matte olive - rich, not neon */
+  --warm:#a8552c; --warm-soft:#c26b3c;          /* softened terracotta */
+  --success:#5a7d3f; --band:#f4ead2; --current:#e2e8da;
   --shadow:0 1px 2px rgba(80,60,35,.07), 0 4px 14px rgba(80,60,35,.06);
   --mono:'IBM Plex Mono',ui-monospace,monospace;
   --sans:'IBM Plex Sans',system-ui,sans-serif;
@@ -30,23 +30,23 @@
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#141a1e; --surface:#1c242a; --surface-2:#222c33; --surface-3:#2a353d;
-    --border:#33414a; --border-strong:#465862;
-    --text:#e8eef0; --text-muted:#9aabb4; --text-faint:#6b7c86;
-    --accent:#5ec5bc; --accent-soft:#7ad6cd;
-    --warm:#e79055; --warm-soft:#f0a771;
-    --success:#6fcf97; --band:#2a2418; --current:#17322f;
-    --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
+    --bg:#17181a; --surface:#1e2022; --surface-2:#25282a; --surface-3:#2e3134;
+    --border:#33373a; --border-strong:#4a4f53;
+    --text:#e6e4e0; --text-muted:#a09d97; --text-faint:#726f6a;
+    --accent:#8fa87a; --accent-soft:#a7bd93;      /* the same olive, lifted */
+    --warm:#c9805a; --warm-soft:#dc9a75;          /* the same terracotta, lifted */
+    --success:#8fa87a; --band:#2a2621; --current:#242a24;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.32);
   }
 }
 :root[data-theme="dark"]{
-  --bg:#141a1e; --surface:#1c242a; --surface-2:#222c33; --surface-3:#2a353d;
-  --border:#33414a; --border-strong:#465862;
-  --text:#e8eef0; --text-muted:#9aabb4; --text-faint:#6b7c86;
-  --accent:#5ec5bc; --accent-soft:#7ad6cd;
-  --warm:#e79055; --warm-soft:#f0a771;
-  --success:#6fcf97; --band:#2a2418; --current:#17322f;
-  --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
+  --bg:#17181a; --surface:#1e2022; --surface-2:#25282a; --surface-3:#2e3134;
+  --border:#33373a; --border-strong:#4a4f53;
+  --text:#e6e4e0; --text-muted:#a09d97; --text-faint:#726f6a;
+  --accent:#8fa87a; --accent-soft:#a7bd93;      /* the same olive, lifted */
+  --warm:#c9805a; --warm-soft:#dc9a75;          /* the same terracotta, lifted */
+  --success:#8fa87a; --band:#2a2621; --current:#242a24;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.32);
 }
 
 *{box-sizing:border-box}
@@ -87,7 +87,14 @@ h1{font-family:var(--display);font-weight:700;font-size:1.7rem;margin:0 0 .3rem;
 .fields input[type=number],.fields input[type=text]{
   font-family:var(--num);font-size:.8rem;font-weight:600;color:var(--text);
   background:var(--surface-2);border:1px solid var(--border);border-radius:4px;
-  padding:.1rem .3rem;width:100%;min-width:0;font-variant-numeric:tabular-nums;text-align:right;line-height:1.35}
+  padding:.12rem .4rem;width:100%;min-width:0;font-variant-numeric:tabular-nums;
+  text-align:right;line-height:1.4;height:1.45rem}
+/* A number input reserves a spinner gutter and a text input does not, so
+   right-aligned values in the same column sat at two different x positions.
+   Removing the spinner is what lines the column up. */
+.fields input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.fields input[type=number]::-webkit-outer-spin-button,
+.fields input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .fields input:focus{outline:2px solid var(--accent);outline-offset:1px}
 .fields input:disabled{opacity:.45;cursor:not-allowed;background:var(--surface-3)}
 .checkrow{grid-column:1 / -1;display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--text-muted);cursor:pointer;user-select:none}
@@ -130,7 +137,7 @@ h1{font-family:var(--display);font-weight:700;font-size:1.7rem;margin:0 0 .3rem;
   border-radius:50%;border:1px solid var(--text-faint);color:var(--text-faint);
   font-size:.55rem;font-weight:700;cursor:help;flex:none;font-style:normal}
 .ico:hover,.ico:focus{border-color:var(--accent);color:var(--accent);outline:none}
-#tip{position:fixed;z-index:200;max-width:22rem;background:var(--text);color:var(--surface);
+#tip{position:fixed;z-index:200;max-width:22rem;background:var(--text);color:var(--surface);white-space:pre-line;
   font-family:var(--sans);font-size:.73rem;font-weight:400;line-height:1.45;
   padding:.45rem .6rem;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.28);
   opacity:0;visibility:hidden;transition:opacity .1s;pointer-events:none;left:0;top:0}
@@ -345,8 +352,8 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
         <div class="fields">
           <label for="partyMembersInput">Members</label>
           <input type="number" id="partyMembersInput" min="1" max="5" value="4">
-          <label class="checkrow"><input type="checkbox" id="othersSameInput" checked><span>Others match me</span></label>
-          <label for="othersGoldBoostInput">Others' boost %</label>
+          <label class="checkrow"><input type="checkbox" id="othersSameInput" checked><span>Party matches me</span></label>
+          <label for="othersGoldBoostInput" id="partyAvgLabel">Party average %</label>
           <input type="number" id="othersGoldBoostInput" min="0" max="1000000" value="0">
           <p class="note" id="partyNote" hidden></p>
         </div>
@@ -1100,7 +1107,7 @@ window.APOZ_FACTS = (function () {
     characterLevel:  { label: 'Character level',   field: 'characterLevel' },
     monsterLevel:    { label: 'Monster level',     field: 'monsterLevel' },
     partyMembers:    { label: 'Party members',     field: 'partyMembers' },
-    othersGoldBoost: { label: 'Others’ boost', field: 'othersGoldBoost', suffix: '%' },
+    othersGoldBoost: { label: 'Party average', field: 'othersGoldBoost', suffix: '%' },
     goldBoost:       { label: 'Your gold boost',   field: 'goldBoost', suffix: '%' },
     actionsPerWeek:  { label: 'Actions / week',    field: 'actionsPerWeek' },
     tax:             { label: 'Village tax',       field: 'tax', suffix: '%' },
@@ -1108,6 +1115,8 @@ window.APOZ_FACTS = (function () {
   };
   var liveData = null;
   var livePetModifiers = null;
+  var livePartyMembers = null;   // [{ name, gold }] - see renderPartyAverageTip()
+  var livePartyMe = null;        // which of them is you, so the average excludes you
 
   function initLive(){
     var card = document.getElementById('liveCard');
@@ -1117,6 +1126,10 @@ window.APOZ_FACTS = (function () {
     if (src.pet && typeof src.pet.flat === 'number' && typeof src.pet.pct === 'number') {
       livePetModifiers = { flat: src.pet.flat, pct: src.pet.pct, potion: src.pet.potion || 0,
                            atSlot: src.pet.atSlot };
+    }
+    if (src.party && Array.isArray(src.party.members)) {
+      livePartyMembers = src.party.members;
+      livePartyMe = src.party.me || null;
     }
     var keys = Object.keys(src.fields).filter(function(k){
       return LIVE_MAP[k] && src.fields[k] && typeof src.fields[k].value === 'number' && isFinite(src.fields[k].value);
@@ -1159,6 +1172,40 @@ window.APOZ_FACTS = (function () {
     if (liveData.fields.goldBoost) document.getElementById(CHECK_IDS.useLiveGoldBoost).checked = true;
     pendingScroll = true;
     requestRender();
+  }
+
+  // Each member on its own line, then the average that the model actually
+  // uses. Showing only the average invites "where did that come from" every
+  // time it looks wrong; showing the inputs and the arithmetic answers it
+  // before it is asked.
+  function renderPartyAverageTip(){
+    var label = document.getElementById('partyAvgLabel');
+    if (!label) return;
+    if (!livePartyMembers || !livePartyMembers.length){
+      label.removeAttribute('data-tip');
+      label.classList.remove('tip');
+      return;
+    }
+    // Show the working, and show the RIGHT average. The field holds the average
+    // of the OTHER members, because this page models you from your own boosts
+    // and multiplies the rest by (members - 1) — averaging you in as well would
+    // count you twice. A tooltip that quietly showed the all-members average
+    // next to a field holding a different number is worse than none.
+    var lines = [], sum = 0, n = 0;
+    for (var i = 0; i < livePartyMembers.length; i++){
+      var m = livePartyMembers[i];
+      var pct = m.gold * 100;
+      var isMe = livePartyMe && m.name === livePartyMe;
+      if (!isMe){ sum += pct; n++; }
+      lines.push((isMe ? '• ' : '  ') + m.name + '   ' + pct.toFixed(1) + '%' + (isMe ? '   (you)' : ''));
+    }
+    lines.push('');
+    lines.push(n
+      ? 'average of the other ' + n + '   ' + (sum / n).toFixed(1) + '%'
+      : 'average   ' + (sum / livePartyMembers.length).toFixed(1) + '%');
+    if (n) lines.push('(you are modelled from your own boosts above)');
+    label.setAttribute('data-tip', lines.join('\n'));
+    label.classList.add('tip');
   }
 
   // Greying out is the honest signal: when real pet data is in use, the
@@ -1261,6 +1308,7 @@ window.APOZ_FACTS = (function () {
 
     initTips();
     initLive();
+    renderPartyAverageTip();
     initProvenance();
     initTheme();
     render();
