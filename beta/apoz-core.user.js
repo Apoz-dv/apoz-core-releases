@@ -2,8 +2,8 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      5.1.1-beta
-// @description  The shell every Apoz module plugs into: the nav launcher, the module and tool registries, shared number handling for the game's per-character decimal convention, and update checking. Install this first — on its own it adds a menu and nothing else.
+// @version      5.2.0-beta
+// @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
 // @grant        none
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "beta",
-    "version": "5.1.1-beta",
+    "version": "5.2.0-beta",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/beta/manifest.json"
   };
   // ==== END GENERATED ====
@@ -336,6 +336,8 @@
     // Modules that asked for a Core newer than this one. Kept so the dropdown
     // can say "install the update" instead of the module simply not appearing.
     const incompatible = {};
+    // Modules installed more than once - see claim().
+    const duplicates = {};
     let enabledOrder = [];
     let coreUi = null;
 
@@ -800,6 +802,22 @@
         row.addEventListener('click', (e) => { e.stopPropagation(); setEnabled(id, !mod.enabled); });
         coreUi.moduleRows.appendChild(row);
       }
+      for (const id of Object.keys(duplicates)) {
+        const row = document.createElement('div');
+        row.className = 'apoz-core-row';
+        row.style.cssText = 'opacity:.6;cursor:default';
+        row.title = 'Two copies of this module are installed. One is running; '
+          + 'delete the older script in the Tampermonkey dashboard.';
+        const dot = document.createElement('span');
+        dot.className = 'apoz-core-row-dot';
+        dot.style.background = '#e0a23e';
+        const label = document.createElement('span');
+        label.textContent = `${(modules[id] && modules[id].label) || id} - installed twice`;
+        row.appendChild(dot);
+        row.appendChild(label);
+        coreUi.moduleRows.appendChild(row);
+      }
+
       // A module that refused to register is worse than a missing one: the
       // user installed something and the menu shows no trace of it. Say why.
       for (const id of Object.keys(incompatible)) {
@@ -936,8 +954,28 @@
     function claim() {
       const queue = window.__apozModules;
       if (!Array.isArray(queue)) return;
+      const seen = new Set();
       for (const entry of queue) {
-        if (!entry || entry.claimed) continue;
+        if (!entry) continue;
+        // TWO COPIES OF THE SAME MODULE is a state renaming the scripts makes
+        // easy to reach: Tampermonkey identifies a script by @name + @namespace,
+        // so a rename installs a SECOND copy rather than updating the first.
+        // Both would push here, both factories would run, and the user would
+        // get two panels and two sets of timers with no clue why. Claim the
+        // first, and say so about the rest.
+        if (entry.claimed || seen.has(entry.id)) {
+          if (!entry.claimed && seen.has(entry.id)) {
+            entry.claimed = true;
+            entry.duplicate = true;
+            duplicates[entry.id] = true;
+            console.warn(`[ApozCore] "${entry.id}" is installed twice - only one copy is running. `
+              + 'Delete the older script in the Tampermonkey dashboard.');
+            if (coreUi) renderDropdown();
+          }
+          seen.add(entry.id);
+          continue;
+        }
+        seen.add(entry.id);
         entry.claimed = true;
         try {
           entry.descriptor = entry.factory(Core) || null;
@@ -992,7 +1030,12 @@
       close.addEventListener('click', () => dismiss());
       el.appendChild(close);
       toastHost.appendChild(el);
-      requestAnimationFrame(() => el.classList.add('apoz-core-toast-in'));
+      // rAF does not fire in a hidden tab, so a toast raised while the user is
+      // elsewhere would sit at opacity 0 until its own timer removed it -
+      // invisible, and unrecoverable. The update notice is exactly the toast
+      // most likely to be raised while nobody is looking.
+      const reveal = () => el.classList.add('apoz-core-toast-in');
+      if (document.hidden) setTimeout(reveal, 0); else requestAnimationFrame(reveal);
 
       let timer = null;
       const ms = opts.duration === undefined ? 6000 : opts.duration;
@@ -1155,19 +1198,24 @@
     }
     window.addEventListener('popstate', () => setTimeout(reanchorNow, 0));
 
-    // safety net only - everything above is the fast path. This catches an SPA
-    // re-render that produced no navigation and no mutation we saw.
-    setInterval(reanchorNow, 3000);
-    setInterval(updateTitleBadge, 5000);
-
-    // Update check rides the existing 5s badge tick rather than owning a timer:
-    // checkForUpdates() is a no-op until 6h have passed since the last one, so
-    // this costs an integer comparison every 5s and one ~1KB fetch twice a day.
-    // The first check is deferred 30s so it never competes with page load.
-    setTimeout(() => {
-      checkForUpdates(false);
-      setInterval(() => checkForUpdates(false), 5000);
-    }, 30000);
+    // ONE heartbeat, not three. Core previously owned a 3s re-anchor timer, a
+    // 5s badge timer and a 5s update poll; three timers that each wake the tab
+    // independently is three chances to be the thing that stops it idling, for
+    // work that is a few comparisons. Everything here is a no-op in the common
+    // case: reanchorNow returns immediately when the group is attached,
+    // updateTitleBadge compares before touching document.title, and
+    // checkForUpdates returns until 6h have elapsed.
+    //
+    // 3s is the fastest of the three, and the only one where latency is
+    // visible to the user.
+    let heartbeats = 0;
+    setInterval(() => {
+      reanchorNow();
+      updateTitleBadge();
+      // First update check after ~30s, then whenever checkForUpdates decides
+      // its own 6h interval has passed.
+      if (++heartbeats >= 10) checkForUpdates(false);
+    }, 3000);
 
     return {
       version: APOZ_CORE_VERSION,

@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Apoz Core — Combat Slot ETA Tracker
+// @name         Apoz Core: Combat Slot ETA Tracker
 // @namespace    apoz-core
 // @author       Apoz
-// @version      4.1.0-beta
-// @description  Read-only overlay: estimates time until the Combat pet slot upgrade is affordable from your live gold and the exact upgrade-cost formula (no need to sit on the Pets page), rings a gentle alarm - and optionally a desktop notification - when it is, and stays accurate in a backgrounded tab. Ships the Party Gold ROI calculator. No auto-clicking.
+// @version      4.2.0-beta
+// @description  Apoz Core module (requires "Apoz Core"). Read-only overlay: estimates time until the Combat pet slot upgrade is affordable from your live gold and the exact upgrade-cost formula (no need to sit on the Pets page), rings a gentle alarm - and optionally a desktop notification - when it is, and stays accurate in a backgrounded tab. Ships the Party Gold ROI calculator. No auto-clicking.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
 // @grant        none
@@ -827,13 +827,30 @@
   // Writes the config INTO the inputs, plus a plain-language preview of the
   // resulting cadence. Four numbers do not tell you what the alarm will
   // actually do; "10s, 14s, 18s... stopping after ~9m" does.
+  // NEVER write into a control the user is currently using. render() runs once
+  // a second while the panel is open, so the previous version overwrote the
+  // volume slider mid-drag and replaced half-typed numbers with the stored
+  // value - the field fought back on every keystroke.
+  function setFieldUnlessEditing(el, value) {
+    if (!el || el === document.activeElement) return;
+    setAttr(el, 'value', value);
+  }
+
+  // The preview is a 25-iteration loop and a string build, and it only changes
+  // when the config does - which is on a click, not on a tick. Recomputing it
+  // every second was work whose output was already on screen.
+  let alarmPreviewKey = null;
   function renderAlarmSettings() {
     if (!ui.alarmVolume) return;
-    setAttr(ui.alarmVolume, 'value', String(Math.round(alarmCfg.volume * 100)));
+    setFieldUnlessEditing(ui.alarmVolume, String(Math.round(alarmCfg.volume * 100)));
     setText(ui.alarmVolumeOut, `${Math.round(alarmCfg.volume * 100)}%`);
-    setAttr(ui.alarmFirst, 'value', String(Math.round(alarmCfg.firstMs / 1000)));
-    setAttr(ui.alarmMax, 'value', String(Math.round(alarmCfg.maxMs / 1000)));
-    setAttr(ui.alarmRepeats, 'value', String(alarmCfg.maxRepeats));
+    setFieldUnlessEditing(ui.alarmFirst, String(Math.round(alarmCfg.firstMs / 1000)));
+    setFieldUnlessEditing(ui.alarmMax, String(Math.round(alarmCfg.maxMs / 1000)));
+    setFieldUnlessEditing(ui.alarmRepeats, String(alarmCfg.maxRepeats));
+
+    const key = `${alarmCfg.firstMs}|${alarmCfg.maxMs}|${alarmCfg.growth}|${alarmCfg.maxRepeats}`;
+    if (key === alarmPreviewKey) return;
+    alarmPreviewKey = key;
 
     let total = 0;
     const gaps = [];
@@ -1279,10 +1296,16 @@
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        window.removeEventListener('blur', onUp);
         if (onChange) onChange();
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
+      // Release the button outside the window and mouseup never reaches the
+      // document, so the move handler stayed attached for the rest of the
+      // session - S3 coming back in through a different door. The blur event
+      // is the one that does arrive.
+      window.addEventListener('blur', onUp);
     });
   }
 
