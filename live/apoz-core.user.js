@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.7.0
+// @version      6.8.0
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.7.0",
+    "version": "6.8.0",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -1644,6 +1644,7 @@
         <div class="apoz-core-separator"></div>
         <div class="apoz-core-bottom-icons">
           <button class="apoz-core-icon-btn" type="button" id="apoz-core-open-settings" data-tooltip="Settings">⚙</button>
+          <button class="apoz-core-icon-btn" type="button" id="apoz-core-open-jobs" data-tooltip="Background jobs — progress and results from the local job host, if one is running. Set it up in Settings." data-tooltip-wide>⧗</button>
           <button class="apoz-core-icon-btn" type="button" id="apoz-core-check-updates" data-tooltip="Check for updates">⟳</button>
           <button class="apoz-core-icon-btn" type="button" id="apoz-core-reset-positions" data-tooltip="Reset window POSITIONS (not sizes) back on-screen — for a full reset including size, use Settings instead" data-tooltip-wide data-tooltip-right
             ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8A5 5 0 1 1 11.3 4.5"/><path d="M13 3.2v3.3h-3.3"/></svg></button>
@@ -1674,6 +1675,11 @@
         if (ok) resetPositions();
       });
       openSettingsBtn.addEventListener('click', (e) => { e.stopPropagation(); closeDropdown(); openSettingsWindow(); });
+      // Beside Settings rather than in the tools list: a tool row is labelled
+      // "opens in a new tab" and this is an in-page window, so listing it there
+      // would promise the wrong thing.
+      dropdown.querySelector('#apoz-core-open-jobs')
+        .addEventListener('click', (e) => { e.stopPropagation(); closeDropdown(); openJobsWindow(); });
       checkUpdatesBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         checkForUpdates(true).then(() => {
@@ -1892,6 +1898,123 @@
     // settings are coming (see the note in openSettingsWindow's body).
     let settingsHandle = null;
     let settingsUi = null;
+    // ---- the jobs window (v11) ----
+    //
+    // The visualisation half of "the browser is the interface". Everything it
+    // shows comes from the host; nothing is computed here.
+    //
+    // It polls only WHILE OPEN, on its own scope, so closing it stops the
+    // traffic — a dashboard that keeps polling a local server after you have
+    // stopped looking at it is exactly the kind of background cost §4.4 budgets
+    // against, and it is invisible precisely because it is cheap per request.
+    let jobsHandle = null;
+    let jobsScope = null;
+
+    function openJobsWindow() {
+      if (!jobsHandle) {
+        jobsHandle = createWindow({
+          id: 'apoz-core-jobs', title: 'Apoz Core Jobs',
+          resizable: 'vertical', minSize: { w: 520, h: 380 },
+          onClose: () => { stopJobsPolling(); jobsHandle.close(); },
+        });
+      }
+      const body = document.createElement('div');
+
+      const status = document.createElement('div');
+      status.style.cssText = 'font-size:11px; margin-bottom:8px; line-height:1.45;';
+      body.appendChild(status);
+
+      const listHost = document.createElement('div');
+      body.appendChild(listHost);
+
+      jobsHandle.setContent(body);
+      jobsHandle.open();
+
+      stopJobsPolling();
+      // Owned by the WINDOW's scope, not Core's: the poll must die with the
+      // window even if nothing remembers to stop it.
+      jobsScope = jobsHandle.scope.child('jobs-poll');
+
+      const refresh = async () => {
+        if (jobs.state.state !== HOST_STATES.READY) await jobs.check();
+        if (jobs.state.state !== HOST_STATES.READY) {
+          status.textContent = `${jobs.state.state}: ${jobs.state.detail}`;
+          listHost.innerHTML = '';
+          return;
+        }
+        let live = { jobs: [] };
+        let durable = { runs: [], resumable: [] };
+        try {
+          live = await (await hostFetch('/jobs')).json();
+          durable = await jobs.runs();
+        } catch (err) {
+          status.textContent = `lost contact with the host: ${err.message}`;
+          return;
+        }
+
+        const cap = jobs.state.health && jobs.state.health.capacity;
+        const store = jobs.state.health && jobs.state.health.storage;
+        status.textContent = `Connected — ${cap ? `${cap.busy}/${cap.workers} workers busy` : 'capacity unknown'}`
+          + `${cap && cap.queued ? `, ${cap.queued} queued` : ''}`
+          + `${store ? ` · ${store.knownFindings.toLocaleString()} simulations banked` : ''}`;
+
+        // A resumable run is the one row that offers an ACTION, so it goes
+        // first: it is the only thing here that is waiting on a decision.
+        const rows = [
+          ...durable.resumable.map((r) => ({ ...r, group: 'interrupted' })),
+          ...live.jobs.map((j) => ({ ...j, group: j.status === 'running' || j.status === 'queued' ? 'active' : 'done' })),
+          ...durable.runs.filter((r) => r.status !== 'interrupted' && !live.jobs.some((j) => j.jobId === r.jobId))
+            .slice(0, 20).map((r) => ({ ...r, group: 'done' })),
+        ];
+
+        listHost.innerHTML = '';
+        if (!rows.length) {
+          const empty = document.createElement('div');
+          empty.style.cssText = 'opacity:.7; font-size:11px; padding:12px 0;';
+          empty.textContent = 'No jobs yet. Nothing has been submitted to this host.';
+          listHost.appendChild(empty);
+          return;
+        }
+
+        listHost.appendChild(ui.table({
+          columns: [
+            { key: 'jobId', label: 'Job' },
+            { key: 'type', label: 'Type' },
+            {
+              key: 'status',
+              label: 'Status',
+              render: (r) => {
+                if (r.group === 'interrupted') return `interrupted at ${r.completed ?? '?'}/${r.total ?? '?'}`;
+                if (r.progress) return `${r.status} — ${r.progress.completed}${r.progress.total ? `/${r.progress.total}` : ''}`;
+                return r.status;
+              },
+            },
+            { key: 'durationMs', label: 'Took', render: (r) => (r.durationMs != null ? `${(r.durationMs / 1000).toFixed(1)}s` : '') },
+          ],
+          rows,
+          rowActions: [
+            {
+              label: (r) => (r.group === 'interrupted' ? 'Resume' : 'Cancel'),
+              onClick: async (r) => {
+                if (r.group === 'interrupted') { toast('Resume is submitted by the module that owns this job type.'); return; }
+                if (r.group === 'done') return;
+                await jobs.cancel(r.jobId);
+                refresh();
+              },
+            },
+          ],
+        }));
+      };
+
+      refresh();
+      const loop = () => { refresh().finally(() => { if (jobsScope && !jobsScope.disposed) jobsScope.timeout(loop, 3000); }); };
+      jobsScope.timeout(loop, 3000);
+    }
+
+    function stopJobsPolling() {
+      if (jobsScope) { jobsScope.dispose(); jobsScope = null; }
+    }
+
     function openSettingsWindow() {
       if (!settingsHandle) {
         settingsHandle = createWindow({
@@ -1906,6 +2029,7 @@
         settingsHandle.setContent(settingsUi.root);
       }
       settingsUi.renderNumberFormat();
+      settingsUi.renderHostStatus();
       settingsHandle.open();
     }
 
@@ -2027,6 +2151,153 @@
       windowsGroup.appendChild(reloadRow);
       root.appendChild(windowsGroup);
 
+      // ---- job host (v11) ----
+      //
+      // The client existed for a version before this did, which was a real gap:
+      // `Core.jobs` could connect, submit and drive the capacity dial, and there
+      // was no way to reach any of it. A settings API with no settings UI is a
+      // feature nobody has.
+      //
+      // WHY THE STATUS LINE IS THE BIGGEST THING HERE. There are four ways this
+      // can be not-working and each has a different fix — nothing listening,
+      // wrong token, a host from another build, or never checked. Collapsing
+      // them into a red dot would leave the user guessing which of four things
+      // to try, so the line says the fix rather than the symptom.
+      const hostGroup = document.createElement('div');
+      hostGroup.className = 'apoz-ui-group';
+      hostGroup.style.cssText = 'margin-top:10px;';
+      const hostLabel = document.createElement('div');
+      hostLabel.style.cssText = 'font-weight:bold; opacity:.7; text-transform:uppercase; font-size:10px; letter-spacing:.04em; margin-bottom:4px;';
+      hostLabel.textContent = 'Job host';
+      hostLabel.appendChild(ui.infoIcon(
+        'An optional local program that runs long simulations outside the browser, so they keep going '
+        + 'when this tab is closed. Everything here works without it — this only unlocks the long jobs. '
+        + 'Start it with: node server/host.mjs',
+      ));
+      hostGroup.appendChild(hostLabel);
+
+      const hostStatusLine = document.createElement('div');
+      hostStatusLine.style.cssText = 'font-size:11px; margin:4px 0 8px; line-height:1.45;';
+      hostGroup.appendChild(hostStatusLine);
+
+      const hostUrlRow = ui.inputRow({
+        label: 'Address',
+        value: jobs.config.url,
+        onChange: (v) => setHostConfig({ url: v.trim() }),
+      });
+      hostGroup.appendChild(hostUrlRow);
+
+      const hostTokenRow = ui.inputRow({
+        label: 'Token',
+        value: '',
+        info: 'The host prints this when it starts. It is regenerated every run and written nowhere, '
+          + 'so it has to be pasted again after restarting the host.',
+        onChange: (v) => setHostConfig({ token: v.trim() }),
+      });
+      hostTokenRow._input.placeholder = jobs.config.hasToken ? '•••••••• (saved)' : 'paste from the host';
+      hostGroup.appendChild(hostTokenRow);
+
+      // ---- capacity ----
+      //
+      // Hidden until connected, because "how many cores" is a meaningless
+      // control when there is nothing to apply it to, and a disabled input with
+      // no explanation is worse than an absent one.
+      const capRow = document.createElement('div');
+      capRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:8px;';
+      capRow.hidden = true;
+      const capLabel = document.createElement('label');
+      capLabel.style.cssText = 'font-size:11px; flex:1;';
+      capLabel.textContent = 'Workers';
+      capLabel.appendChild(ui.infoIcon(
+        'How many CPU cores the host may use. Safe to change while jobs are running: more takes effect '
+        + 'immediately, fewer lets running jobs finish first and never throws work away.',
+      ));
+      const capInput = document.createElement('input');
+      capInput.type = 'number';
+      capInput.min = '1';
+      capInput.style.cssText = 'width:64px;';
+      const capApply = document.createElement('button');
+      capApply.type = 'button';
+      capApply.className = 'apoz-ui-btn';
+      capApply.textContent = 'Apply';
+      capRow.appendChild(capLabel);
+      capRow.appendChild(capInput);
+      capRow.appendChild(capApply);
+      hostGroup.appendChild(capRow);
+
+      const hostBtnRow = document.createElement('div');
+      hostBtnRow.style.cssText = 'display:flex; gap:6px; margin-top:8px;';
+      const hostCheckBtn = document.createElement('button');
+      hostCheckBtn.type = 'button';
+      hostCheckBtn.className = 'apoz-ui-btn apoz-ui-btn-primary';
+      hostCheckBtn.textContent = 'Connect';
+      const hostJobsBtn = document.createElement('button');
+      hostJobsBtn.type = 'button';
+      hostJobsBtn.className = 'apoz-ui-btn';
+      hostJobsBtn.textContent = 'View jobs';
+      hostJobsBtn.addEventListener('click', () => openJobsWindow());
+      hostBtnRow.appendChild(hostCheckBtn);
+      hostBtnRow.appendChild(hostJobsBtn);
+      hostGroup.appendChild(hostBtnRow);
+
+      const HOST_COPY = {
+        [HOST_STATES.UNKNOWN]: ['', 'Not checked yet — press Connect.'],
+        [HOST_STATES.READY]: ['#4caf50', 'Connected.'],
+        [HOST_STATES.NO_HOST]: ['#e0a33e', 'Not running.'],
+        [HOST_STATES.UNAUTHORIZED]: ['#e0a33e', 'Token not accepted.'],
+        [HOST_STATES.MISMATCH]: ['#e0483e', 'Version mismatch — do not use.'],
+      };
+
+      function renderHostStatus() {
+        const s = jobs.state;
+        const [color, headline] = HOST_COPY[s.state] || HOST_COPY[HOST_STATES.UNKNOWN];
+        hostStatusLine.innerHTML = '';
+        const strong = document.createElement('div');
+        strong.style.cssText = `font-weight:bold;${color ? ` color:${color};` : ''}`;
+        strong.textContent = headline;
+        const detail = document.createElement('div');
+        detail.style.cssText = 'opacity:.75; margin-top:2px;';
+        detail.textContent = s.detail || '';
+        hostStatusLine.appendChild(strong);
+        if (s.detail) hostStatusLine.appendChild(detail);
+
+        const cap = s.health && s.health.capacity;
+        capRow.hidden = !(s.state === HOST_STATES.READY && cap);
+        if (cap) {
+          capLabel.firstChild.nodeValue = `Workers (${cap.busy} busy, up to ${cap.maxUseful} useful) `;
+          if (document.activeElement !== capInput) capInput.value = String(cap.workers);
+          capInput.max = String(cap.maxUseful);
+        }
+      }
+
+      hostCheckBtn.addEventListener('click', async () => {
+        hostCheckBtn.disabled = true;
+        hostCheckBtn.textContent = 'Checking…';
+        try { await jobs.check(); } finally {
+          hostCheckBtn.disabled = false;
+          hostCheckBtn.textContent = 'Connect';
+          renderHostStatus();
+        }
+      });
+
+      capApply.addEventListener('click', async () => {
+        const n = parseInt(capInput.value, 10);
+        if (!Number.isInteger(n) || n < 1) { toast('Workers must be a whole number, 1 or more.'); return; }
+        capApply.disabled = true;
+        try {
+          await jobs.setCapacity(n);
+          await jobs.check();
+          toast(`Host is now using ${n} worker${n === 1 ? '' : 's'}.`);
+        } catch (err) {
+          toast(`Could not change capacity: ${err.message}`);
+        } finally {
+          capApply.disabled = false;
+          renderHostStatus();
+        }
+      });
+
+      root.appendChild(hostGroup);
+
       // ---- reset (settings, separate from "Reset window sizes" above —
       // one resets WHERE/HOW BIG things are, this resets the settings
       // THEMSELVES: number format override, theme, reload behaviour,
@@ -2061,6 +2332,7 @@
 
       return {
         root,
+        renderHostStatus,
         renderNumberFormat() {
           const c = getConvention();
           const auto = c.source !== 'override';
@@ -2956,6 +3228,12 @@
       // property rather than a review checklist.
       createScope,
       get __coreScopeForTest() { return coreScope; },
+      // Test seams for the SETTINGS SURFACE, not for its wiring. They exist
+      // because `Core.jobs` shipped correct and unreachable — every API test
+      // passed while the feature had no interface at all. A test that calls the
+      // API cannot, by construction, notice that a user cannot.
+      __openSettingsForTest() { openSettingsWindow(); },
+      __settingsRootForTest() { return settingsUi && settingsUi.root; },
       // The local job host (v11). The browser submits and visualises; the host
       // computes and survives the tab closing. server/README.md.
       jobs,
