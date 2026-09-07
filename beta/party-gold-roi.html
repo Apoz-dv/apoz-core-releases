@@ -576,7 +576,7 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
 /* GENERATED from data/ by userscripts/build.mjs — do not edit. */
 window.APOZ_FACTS = (function () {
   /* formulas/pets.json :: pets.slotUpgrade.costFormula  [CODE] */
-  function petSlotUpgradeCost(currentLevel, newLevel) { let total = 0; for (let r = currentLevel + 1; r <= newLevel; r++) total += Math.floor(500000 * r**3); return { currency: 'gold', value: total }; } // per-level marginal cost at level L->L+1 is floor(500000*(L+1)^3)
+  function petSlotUpgradeCost(currentLevel, newLevel) { let total = 0; for (let r = currentLevel + 1; r <= newLevel; r++) total += r <= 150 ? Math.floor(500000 * r**3) : Math.floor(500000 * 150**3 * (r/150)**15); return { currency: 'gold', value: total }; } // per-level marginal cost at level L->L+1: floor(500000*(L+1)^3) while L+1<=150, else floor(500000*150^3*((L+1)/150)^15). Exactly continuous at the seam: both branches evaluate to floor(500000*150^3) = 1,687,500,000,000 at r=150.
   /* formulas/equipment.json :: equipment.slotUpgrade.boostFormula  [CODE] */
   function slotBoostPercent(slotLevel) { let block = Math.floor(slotLevel / 30); let intoBlock = slotLevel % 30; return 0.3*block*(block+1)/2 + intoBlock*0.01*(block+1); }
   /* formulas/party.json :: party.fifthMemberPenalty.formula  [CODE] */
