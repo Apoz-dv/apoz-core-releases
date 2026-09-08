@@ -2,7 +2,7 @@
 // @name         Apoz Core: Fighter Allocator
 // @namespace    apoz-core
 // @author       Apoz
-// @version      1.3.2
+// @version      1.7.0
 // @description  Apoz Core module (requires "Apoz Core"). Allocates gold-purchased fighter stats (Health/Damage/Hit/Dodge/Defense/Crit Damage) across your 6 fighters. Class-keyed profiles with a full table (category, classes, date, source), World Boss-aware math (Hit target from boss level, exact Damage/Crit Damage split), and two-way import/export with the community "Fighter Optimizer" gold-plan format. Fills the game's own stat inputs; never auto-clicks Save Preset.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -32,12 +32,16 @@
   // constants/fighters.json :: fighters.statPurchase.costFormula  [CODE]
   function fighterStatPurchaseCost(fromLevel, toLevel) { const count = toLevel - fromLevel; return (fromLevel + toLevel) * count / 2 * 10000; }
 
+  // tables/modifier-tiers.json :: tiers.equipment.boostPercent  [CODE]
+  const EQUIPMENT_TIER_BOOST_PERCENT = [10,20,30,40,50,75,100,125,150,175,200,250,275,300,325,350];
+
   // PROVENANCE — generated from this module's facts manifest.
   const PROVENANCE = [
     { file: "constants/fighters.json", fact: "fighters.perPointScale" },
     { file: "constants/fighters.json", fact: "fighters.flatBase" },
     { file: "constants/fighters.json", fact: "fighters.monsterStatBreakpointScale" },
     { file: "constants/fighters.json", fact: "fighters.statPurchase.costFormula" },
+    { file: "tables/modifier-tiers.json", fact: "tiers.equipment.boostPercent" },
   ];
   void PROVENANCE; // declaration only — never read at runtime
 
@@ -53,7 +57,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("fighter-allocator", "1.3.2-dev", function (Core) {
+  })("fighter-allocator", "1.7.0-dev", function (Core) {
 
 
   const MODULE_ID = 'fighter-allocator';
@@ -190,40 +194,148 @@
     };
   }
 
-  // Ties the Hit target and the Damage/Crit-Damage split into one per-fighter
-  // gold allocation. Hit is carved out FIRST and up to its exact saturation
-  // target (a fixed, bounded cost — see hitTargetForBossLevel), because past
-  // that point a Hit raw level is worth literally zero while Damage/Crit
-  // Damage never stop paying off; the remainder is then split by the exact
-  // circle-constrained optimum. SIMPLIFICATION, stated rather than hidden:
-  // if the budget can't fully cover the Hit target, this puts the entire
-  // budget into Hit alone rather than solving the full 3-way joint
-  // optimization — reasonable since Hit multiplies the whole attack while
-  // under-target, but not proven optimal at the margin in that specific
-  // shortfall case.
-  function allocateFighterForWorldBoss({ goldBudget, bossLevel, currentHitRaw, currentDamageRaw, currentCritDamageRaw, critChance, gearHitBonus }) {
-    const H0 = currentHitRaw || 0;
+  // The chance an attack lands. The 0.95 ceiling is why "buy Hit to the cap"
+  // was ever tempting — and, as it turns out, exactly why it is wrong.
+  function hitChanceAt(hitRaw, bossLevel, gearHitBonus) {
+    const hf = statFinalFromRaw('Hit', hitRaw) + (gearHitBonus || 0);
+    const dodge = bossDodgeAtLevel(bossLevel);
+    if (!(hf > 0)) return 0.25;
+    return Math.min(0.95, Math.max(0.25, 0.25 + 0.75 * hf / (hf + dodge)));
+  }
+
+  // Expected damage per attack — the thing actually being maximised.
+  //
+  // EVERY TERM IS A TOTAL: gear + implicits + flat base + points bought. The
+  // first version of this used only the purchased part, which is not a smaller
+  // version of the same problem — it is a different one. Because the three
+  // terms MULTIPLY, a gear bonus on one of them changes the marginal value of
+  // buying more of the OTHERS, so ignoring gear does not merely under-report
+  // the damage, it moves the optimal split.
+  function expectedDamage({ hitRaw, damageRaw, critDamageRaw, bossLevel, critChance, gearHitBonus, gearDamageBonus, gearCritDamageBonus }) {
+    return hitChanceAt(hitRaw, bossLevel, gearHitBonus)
+      * (statFinalFromRaw('Damage', damageRaw) + (gearDamageBonus || 0))
+      * (1 + (critChance || 0) * (statFinalFromRaw('Crit Damage', critDamageRaw) + (gearCritDamageBonus || 0)));
+  }
+
+  // ONE JOINT OPTIMISATION OVER ALL THREE STATS — corrected 2026-09-08.
+  //
+  // ── WHAT WAS WRONG, AND BY HOW MUCH ──────────────────────────────────────
+  //
+  // The previous version bought Hit FIRST, all the way to its saturation
+  // target, and only then split whatever was left between Damage and Crit
+  // Damage. Its stated justification was that "past the cap a Hit level is
+  // worth literally zero while Damage/Crit Damage never stop paying off".
+  // That argument is sound and proves only that you must not go PAST the cap.
+  // It says nothing about whether you should go TO it — and the answer is no.
+  //
+  // **At the cap, the marginal value of Hit is exactly zero** (that is what a
+  // cap means), while Damage and Crit Damage still have strictly positive
+  // marginal value. So the last gold spent reaching the cap always buys less
+  // than the same gold spent elsewhere: the optimum is strictly BELOW it.
+  // Measured at boss L400 with a covering budget: **+7.2% expected damage**
+  // from stopping at ~91% hit chance instead of 95%.
+  //
+  // The shortfall case was far worse, and was not a rounding error. When the
+  // budget could not reach the cap, the old code put the ENTIRE budget into
+  // Hit and left Damage and Crit Damage at zero — a fighter with a good chance
+  // to land an attack that does nothing. Measured at the same boss level:
+  // **78x worse at a 1b budget, 1479x worse at 100b.** The old comment called
+  // this "reasonable since Hit multiplies the whole attack", which confuses
+  // multiplying with mattering: 0.65 x 0 is not better than 0.52 x 384.
+  //
+  // ── THE STRUCTURE, WHICH IS THE SAME ONE, ONE DIMENSION UP ───────────────
+  //
+  // All six stats share the identical quadratic cost curve, so a gold budget
+  // is a SPHERE in (Hit, Damage, CritDamage) raw-level space:
+  //   H^2 + D^2 + C^2 = goldBudget/5000 + H0^2 + D0^2 + C0^2
+  // The old Damage/CritDamage split already used exactly this insight in 2D (a
+  // circle). Fixing Hit first is what flattened a sphere into a circle and
+  // threw away the dimension that mattered most.
+  //
+  // Solved numerically — coarse spherical grid, then ternary refinement on
+  // each angle. Not closed-form on purpose: the hit-chance term is a saturating
+  // rational function, and forcing a closed form would mean linearising the
+  // one part of this whose curvature IS the finding.
+  function allocateFighterForWorldBoss({ goldBudget, bossLevel, currentHitRaw, currentDamageRaw, currentCritDamageRaw, critChance, gearHitBonus, gearDamageBonus, gearCritDamageBonus }) {
+    const H0 = Math.max(0, currentHitRaw || 0);
+    const D0 = Math.max(0, currentDamageRaw || 0);
+    const C0 = Math.max(0, currentCritDamageRaw || 0);
     const hitTargetFinal = hitTargetForBossLevel(bossLevel);
     const hitTargetRaw = Math.max(H0, rawPointsForFinalStat('Hit', hitTargetFinal, gearHitBonus || 0));
-    const hitCost = goldCostForPoints(H0, hitTargetRaw - H0);
+    const hitCostToCap = goldCostForPoints(H0, hitTargetRaw - H0);
 
-    let hitRaw, remainingGold;
-    if (hitCost <= goldBudget) {
-      hitRaw = hitTargetRaw;
-      remainingGold = goldBudget - hitCost;
-    } else {
-      hitRaw = Math.floor(maxLevelForBudget(H0, goldBudget));
-      remainingGold = 0;
+    const K = Math.max(0, goldBudget || 0) / 5000 + H0 * H0 + D0 * D0 + C0 * C0;
+    const R = Math.sqrt(K);
+
+    // Points already bought cannot be un-bought, so every candidate is floored
+    // at the current level. (H0,D0,C0) is always inside the sphere by
+    // construction, so a feasible point always exists.
+    const at = (phi, theta) => {
+      const H = Math.max(H0, R * Math.sin(phi) * Math.cos(theta));
+      const D = Math.max(D0, R * Math.sin(phi) * Math.sin(theta));
+      const C = Math.max(C0, R * Math.cos(phi));
+      return { H, D, C };
+    };
+    const score = (phi, theta) => {
+      const p = at(phi, theta);
+      return expectedDamage({
+        hitRaw: p.H, damageRaw: p.D, critDamageRaw: p.C, bossLevel, critChance,
+        gearHitBonus, gearDamageBonus, gearCritDamageBonus,
+      });
+    };
+
+    // Coarse grid first. The product of a saturating term and two increasing
+    // ones is well-behaved here but not provably unimodal, and seeding the
+    // refinement from a grid costs ~1600 evaluations of pure arithmetic.
+    const HALF_PI = Math.PI / 2;
+    let bestPhi = HALF_PI / 2, bestTheta = HALF_PI / 2, bestVal = -Infinity;
+    const G = 40;
+    for (let i = 0; i <= G; i++) {
+      for (let j = 0; j <= G; j++) {
+        const phi = HALF_PI * i / G, theta = HALF_PI * j / G;
+        const v = score(phi, theta);
+        if (v > bestVal) { bestVal = v; bestPhi = phi; bestTheta = theta; }
+      }
     }
-    const split = splitDamageCritDamageByGold({
-      goldBudget: remainingGold, currentDamageRaw, currentCritDamageRaw, critChance,
-    });
+    // Then ternary-refine each angle in turn, around the grid cell that won.
+    const cell = HALF_PI / G;
+    for (let pass = 0; pass < 4; pass++) {
+      let lo = Math.max(0, bestPhi - cell), hi = Math.min(HALF_PI, bestPhi + cell);
+      for (let k = 0; k < 40; k++) {
+        const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+        if (score(m1, bestTheta) < score(m2, bestTheta)) lo = m1; else hi = m2;
+      }
+      bestPhi = (lo + hi) / 2;
+      lo = Math.max(0, bestTheta - cell); hi = Math.min(HALF_PI, bestTheta + cell);
+      for (let k = 0; k < 40; k++) {
+        const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+        if (score(bestPhi, m1) < score(bestPhi, m2)) lo = m1; else hi = m2;
+      }
+      bestTheta = (lo + hi) / 2;
+    }
+
+    const best = at(bestPhi, bestTheta);
+    const hitRaw = Math.round(best.H);
+    const damageRaw = Math.round(best.D);
+    const critDamageRaw = Math.round(best.C);
+    const achievedHitChance = hitChanceAt(hitRaw, bossLevel, gearHitBonus);
+
     return {
       hitRaw, hitPoints: Math.max(0, hitRaw - H0),
-      hitFullyCovered: hitCost <= goldBudget,
-      damageRaw: split.damageRaw, damagePoints: split.damagePoints,
-      critDamageRaw: split.critDamageRaw, critDamagePoints: split.critDamagePoints,
-      hitTargetFinal, hitTargetRaw, hitCostGold: hitCost,
+      damageRaw, damagePoints: Math.max(0, damageRaw - D0),
+      critDamageRaw, critDamagePoints: Math.max(0, critDamageRaw - C0),
+      // Reported so the UI can SAY what it chose rather than implying a cap was
+      // aimed for. `hitFullyCovered` is kept for the existing log line but now
+      // means "the budget could have reached the cap", not "we spent it there".
+      achievedHitChance,
+      stoppedBelowCap: hitRaw < hitTargetRaw,
+      hitTargetFinal, hitTargetRaw, hitCostGold: hitCostToCap,
+      hitFullyCovered: hitCostToCap <= (goldBudget || 0),
+      expectedDamage: expectedDamage({
+        hitRaw, damageRaw, critDamageRaw, bossLevel, critChance,
+        gearHitBonus, gearDamageBonus, gearCritDamageBonus,
+      }),
+      gearHitBonus: gearHitBonus || 0, gearDamageBonus: gearDamageBonus || 0, gearCritDamageBonus: gearCritDamageBonus || 0,
     };
   }
 
@@ -586,9 +698,69 @@
     return (v && v > 0) ? v : null;
   }
 
-  function findStatInput(statName) {
+  function findStatCard(statName) {
     const cards = [...document.querySelectorAll('div')].filter((el) => text(el).startsWith(statName) && el.querySelector('input'));
-    return cards[0]?.querySelector('input') || null;
+    return cards[0] || null;
+  }
+
+  function findStatInput(statName) {
+    return findStatCard(statName)?.querySelector('input') || null;
+  }
+
+  // THE GAME'S OWN TOTAL FOR A STAT, read off the allocation screen.
+  //
+  // Reported by the user 2026-09-08 and it is the best source available: the
+  // number beside each slider shows the GEAR TOTAL when the allocation is 0,
+  // and rises as points are added. So it already folds in gear, implicits,
+  // enchants and anything else — including sources nobody here has enumerated,
+  // which is precisely the failure mode of adding up items by hand.
+  //
+  // Preferred over the fiber walk for exactly that reason. The fiber read
+  // stays as a fallback because this one depends on the card's rendered text,
+  // and text layout is the least stable thing on a page we do not own.
+  //
+  // Parsed by taking the largest number in the card that is NOT the input's
+  // own value: the card also contains the allocation number itself, and on a
+  // fresh preset both can be present. Uses Core.parseNumber, so it honours the
+  // account's decimal convention rather than assuming a locale.
+  function readStatTotalFromCard(statName) {
+    const card = findStatCard(statName);
+    if (!card) return null;
+    const input = card.querySelector('input');
+    const own = input ? Core.parseNumber(input.value) : null;
+    // THE MAGNITUDE SUFFIX MUST TRAVEL WITH THE NUMBER. `Core.parseNumber`
+    // understands "744,70k"; a `[\d.,]+` match hands it "744,70" and loses the
+    // k — a 1000x error that produces a plausible-looking small number rather
+    // than an obvious failure. That is exactly how the first version read a
+    // gear Crit Damage of 5,380 against a true value near 10, and then planned
+    // 9 Crit Damage points off it.
+    const nums = (text(card).match(/\d[\d.,]*\s*[a-z]{0,2}/gi) || [])
+      .map((s) => Core.parseNumber(s))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (!nums.length) return null;
+    const candidates = nums.filter((n) => own == null || n !== own);
+    if (!candidates.length) return null;
+    return Math.max(...candidates);
+  }
+
+  // Gear contribution = the displayed total minus what the bought points
+  // contribute. Floored at 0: negative would mean the two reads disagree, and
+  // carrying that into the objective would bias every allocation for that
+  // fighter rather than failing visibly.
+  // Returns null — REFUSES — rather than clamping, when the displayed total
+  // cannot be what it claims to be.
+  //
+  // The total must at least cover what the bought points alone contribute; a
+  // smaller number means the read grabbed some other number on the card, not
+  // the total. The first version clamped that case to 0, so a failed read
+  // arrived at the optimiser as "this fighter has no gear" — indistinguishable
+  // from a true zero, and acted on with full confidence. Wrong gear data is
+  // worse than none, because none is at least the plan we already had.
+  function gearFromDisplayedTotal(stat, displayedTotal, boughtPoints) {
+    if (!Number.isFinite(displayedTotal)) return null;
+    const fromPoints = statFinalFromRaw(stat, boughtPoints || 0) - FIGHTER_FLAT_BASE[STAT_KEY[stat] || stat];
+    if (displayedTotal < fromPoints) return null;
+    return displayedTotal - fromPoints;
   }
 
   // The one write this module performs — Assist, not Act (INSTRUMENTATION.md
@@ -909,7 +1081,7 @@
         (msg) => setStatus(msg, 'info'), () => allocateAbort);
 
       setStatus('Verifying every slider landed on target…', 'info');
-      const mismatches = verifyAppliedValues(resolution.matched, profile, buttons, liveBudgetB);
+      const mismatches = await verifyAppliedValues(resolution.matched, profile, buttons, liveBudgetB);
       if (mismatches.length) {
         setStatus(`Filled, but ${mismatches.length} value(s) don't match what was requested — `
           + `${mismatches.slice(0, 3).map((m) => `${m.class} ${m.stat}: wanted ${m.want}, page shows ${m.got}`).join('; ')}. `
@@ -934,16 +1106,46 @@
   // Re-reads every filled stat input's CURRENT value and compares against
   // what applyResolved was asked to set — independent of trusting the fill
   // mechanism worked, and independent of the game's own toast wording.
-  function verifyAppliedValues(matched, profile, liveButtons, budgetB) {
+  // FIXED 2026-09-08 — this was reporting mismatches that were not real.
+  //
+  // It clicked a fighter and read the inputs IMMEDIATELY. The page is an SPA:
+  // the click schedules a re-render, it does not perform one. So the read
+  // landed on whatever was still on screen — the PREVIOUS fighter's values —
+  // and every fighter after the first was compared against its neighbour.
+  //
+  // The user's report is the proof: "Bastion Damage: wanted 3256, page shows
+  // 3250" while Berserker's Damage was 3250, and "Bastion Crit Damage: wanted
+  // 2278, page shows 2287" while Berserker's was 2287. Neighbouring fighters
+  // have near-identical allocations, which is exactly why this looked like a
+  // rounding problem rather than a stale read — and why the allocation was
+  // always correct when checked by hand afterwards.
+  //
+  // The fix is not a fixed sleep. It POLLS until the field reaches the value
+  // just written, with a timeout, so a genuine mismatch is still reported —
+  // a fixed delay would only make the race less likely, and this check exists
+  // precisely to be trusted before someone presses Save Preset.
+  async function verifyAppliedValues(matched, profile, liveButtons, budgetB) {
     const mismatches = [];
     for (const { class: cls, index } of matched) {
       const fighterStats = profile.stats[cls];
       liveButtons[index].closest('div')?.click();
+
       for (const stat of STATS) {
-        const input = findStatInput(stat);
-        if (!input) continue;
         const want = scaleLevel(fighterStats[stat], budgetB, profile.sourceBudgetB || budgetB);
-        const got = Core.parseNumber(input.value);
+        let got = null;
+        let input = null;
+        // ~1.2s of patience, checked often. Settles in one or two ticks in the
+        // normal case, so this costs nothing when the page is keeping up.
+        for (let attempt = 0; attempt < 24; attempt++) {
+          input = findStatInput(stat);
+          if (input) {
+            got = Core.parseNumber(input.value);
+            if (got === want) break;
+          }
+          // eslint-disable-next-line no-await-in-loop
+          await sleep(50);
+        }
+        if (!input) continue;
         if (got !== want) mismatches.push({ class: cls, stat, want, got });
       }
     }
@@ -1095,6 +1297,191 @@
   // while a specific item is being hovered, or a gear-selection modal is
   // open) — needs a live pass to confirm whether clicking alone is enough,
   // or whether hovering each equipped item first will be needed too.
+  // ── THE WHOLE ASSEMBLED FIGHTER STAT BLOCK, NOT JUST CRIT CHANCE ────────
+  //
+  // Added 2026-09-08 after the user asked whether the optimiser accounts for
+  // gear. It did not — and worse, it passed `currentHitRaw/Damage/CritDamage:
+  // 0` hardcoded, so it planned every fighter as if they were naked with zero
+  // purchased points. That is wrong in a way that changes the ANSWER, not just
+  // the reported numbers: expected damage is
+  //   hit(H_total) x D_total x (1 + critChance x CD_total)
+  // and each total is gear + base + purchased. A fighter already carrying a
+  // large gear Damage bonus gets proportionally less from buying more Damage,
+  // which shifts the optimal split toward Crit Damage — and vice versa. Gear
+  // Hit likewise reduces how many Hit points buy a given hit chance.
+  //
+  // SHAPE, traced from the shipped bundle (CODE-tier, 2026-09-07 capture):
+  // `simulator.worker-B9yF9GIb.js` and `page-c4WAz33r.js` both carry the
+  // fighter object's schema —
+  //   { class, placement:{row,column}, stats: { health, healthMax, defense,
+  //     damage, dodge, hit, critDamage, fighterMultistrike?,
+  //     fighterCritChance?, fighterThorns?, fighterLifesteal?, fighterRegen?,
+  //     fighterHealing? } }
+  // Note which names are which: the BASE stats are plain (`hit`, `damage`,
+  // `critDamage`); only the fighter-specific percentage stats carry the
+  // `fighter` prefix. Looking for `fighterDamage` or `fighterHit` finds
+  // nothing, because they do not exist.
+  //
+  // This is the fighter's TOTAL, already including gear, implicits and
+  // purchased points — which is better than summing individual items, because
+  // it cannot miss a source nobody thought to enumerate.
+  // CORRECTED 2026-09-08, ON LIVE OUTPUT. The first version of this looked for
+  // the fighter's ASSEMBLED stat block — `{ class, stats: { health, damage,
+  // hit, critDamage, ... } }` — a shape that genuinely exists in the bundle
+  // (`simulator.worker`, `page-c4WAz33r.js`). It reported "gear NOT read" for
+  // all six fighters on a real account: that object is BUILT when submitting to
+  // the simulator, it does not sit in React state waiting to be walked.
+  //
+  // What demonstrably IS reachable is the equipped ITEM, because the Crit
+  // Chance read has been doing it successfully on this account all along.
+  // So this generalises the mechanism already proven to work rather than
+  // guessing at a third shape.
+  //
+  // ITEM SHAPE, from the bundle:
+  //   { _id, name, rarity, iLevel, virtue,
+  //     stats:     [{ type, tier, value }],
+  //     implicits: [{ type, tier, value }] }
+  // `value` is the RESOLVED amount, so item level and tier are already baked
+  // into it — reading `value` is reading the gear's real contribution, which
+  // is what the question "does it account for equipment level?" is asking.
+  //
+  // Base stat types are plain (`hit`, `damage`, `critDamage`); only the
+  // fighter-specific percentage stats carry the `fighter` prefix. There is no
+  // `fighterDamage` or `fighterHit` — grepping the bundle for them finds
+  // nothing.
+  const GEAR_STAT_TYPES = Object.freeze(['hit', 'damage', 'critDamage', 'fighterCritChance']);
+
+  // THE TIER MULTIPLIER, WITHOUT WHICH EVERY GEAR READ IS SILENTLY TOO SMALL.
+  //
+  // An item's fiber `value` is the BASE ROLL, not what the game shows. The
+  // displayed number is `value x (1 + boostPercent[tier]/100)`. Confirmed
+  // three independent ways against one live item, 2026-09-08 — the user
+  // supplied the rendered equipment card and the fiber dump for the same gear:
+  //
+  //   Damage      T16   267,668  x 4.50  = 1,204,506   card: "1,20m"
+  //   Hit         T16   641,654  x 4.50  = 2,887,443   card: "2,89m"
+  //   CritChance  T12   0.07127  x 3.50  = 0.24945     card: "24,95%"
+  //
+  // Three stats, two different tiers, all matching to display precision. That
+  // is what makes this CROSS-tier rather than a plausible-looking guess.
+  //
+  // The consequence is not cosmetic: the scan had been reporting this account's
+  // Crit Chance as 17.13% when it is ~34.95%, and every gear Hit/Damage figure
+  // at between a fifth and a quarter of its real value.
+  function equipmentTierMultiplier(tier) {
+    const pct = EQUIPMENT_TIER_BOOST_PERCENT[(tier || 1) - 1];
+    // Unknown tier -> 1x rather than 0x or a guess: an unrecognised tier should
+    // under-report by the multiplier, never erase the stat entirely.
+    return pct == null ? 1 : 1 + pct / 100;
+  }
+
+  // A PASTE-BACK PROBE, in the same spirit as `__apozDiag()` and
+  // `__apozWhereIsTheNav()`. Two attempts at reading gear have now been made
+  // from bundle-traced shapes, and one of them found nothing live. Rather than
+  // guess a third time, this reports what the fiber walk ACTUALLY contains so
+  // the next attempt is aimed at something real.
+  //
+  // Deliberately plain text and deliberately global: it is for pasting back,
+  // not for programs. Open a fighter first so their gear is rendered.
+  window.__apozFighterProbe = function () {
+    const out = ['--- Apoz Fighter Allocator: gear probe ---'];
+    if (!Core.walkFiberAll) {
+      out.push('Core.walkFiberAll is missing — update Apoz Core.');
+      const t = out.join('\n'); console.log(t); return t;
+    }
+    const shapes = new Map();
+    let objects = 0;
+    Core.walkFiberAll((cand) => {
+      if (!cand || typeof cand !== 'object') return false;
+      objects++;
+      if (!Array.isArray(cand.stats)) return false;
+      // Summarise by the SET of stat types it carries, so a hundred items
+      // collapse into a handful of distinct shapes.
+      const types = [...new Set(cand.stats.map((s) => s && s.type).filter(Boolean))].sort();
+      const key = types.join(',') || '(no typed stats)';
+      const rec = shapes.get(key) || { count: 0, sample: null };
+      rec.count++;
+      if (!rec.sample) {
+        rec.sample = {
+          keys: Object.keys(cand).slice(0, 12),
+          firstStat: cand.stats[0] || null,
+          implicits: Array.isArray(cand.implicits) ? cand.implicits.length : 'absent',
+          iLevel: cand.iLevel ?? 'absent',
+        };
+      }
+      shapes.set(key, rec);
+      return false; // never stop; we want the whole picture
+    });
+    out.push(`objects visited: ${objects}`);
+    out.push(`distinct stat-array shapes: ${shapes.size}`);
+    for (const [types, rec] of shapes) {
+      out.push(`\n  x${rec.count}  types: ${types}`);
+      out.push(`      keys: ${rec.sample.keys.join(', ')}`);
+      out.push(`      iLevel: ${rec.sample.iLevel}  implicits: ${rec.sample.implicits}`);
+      out.push(`      first stat entry: ${JSON.stringify(rec.sample.firstStat)}`);
+    }
+    const scan = scanEquippedStatsViaFiber();
+    out.push(`\nwhat the fiber item-scan makes of it: ${scan ? JSON.stringify(scan) : 'NOTHING FOUND'}`);
+    if (scan && scan.items <= 2) {
+      out.push('  NOTE: that is one or two ITEMS, not the whole loadout. The fiber only');
+      out.push('  holds the card currently rendered, so this is a floor, never a total.');
+    }
+
+    // The allocation cards, verbatim. This is the half that decides whether
+    // gear can be read at all, and every failure so far has been a parsing
+    // failure rather than a missing element — so show the raw text, what was
+    // tokenised out of it, and what each step concluded.
+    out.push('\n--- allocation cards (the "page totals" source) ---');
+    for (const stat of ['Hit', 'Damage', 'Crit Damage']) {
+      const card = findStatCard(stat);
+      if (!card) { out.push(`\n  ${stat}: NO CARD FOUND`); continue; }
+      const input = card.querySelector('input');
+      const raw = text(card);
+      const tokens = raw.match(/\d[\d.,]*\s*[a-z]{0,2}/gi) || [];
+      out.push(`\n  ${stat}:`);
+      out.push(`    raw text: ${JSON.stringify(raw.slice(0, 220))}`);
+      out.push(`    input value: ${JSON.stringify(input ? input.value : null)}`
+        + ` -> parsed ${input ? Core.parseNumber(input.value) : 'n/a'}`);
+      out.push(`    tokens -> parsed: ${tokens.map((t) => `${JSON.stringify(t)}=${Core.parseNumber(t)}`).join(', ') || '(none)'}`);
+      const total = readStatTotalFromCard(stat);
+      const bought = input ? Core.parseNumber(input.value) : 0;
+      out.push(`    chosen total: ${total}`);
+      out.push(`    points contribute: ${statFinalFromRaw(stat, bought || 0) - FIGHTER_FLAT_BASE[STAT_KEY[stat] || stat]}`);
+      out.push(`    => gear: ${gearFromDisplayedTotal(stat, total, bought || 0) ?? 'REFUSED (total is below what the points alone contribute)'}`);
+    }
+    out.push('--- end ---');
+    const text = out.join('\n');
+    console.log(text);
+    return text;
+  };
+
+  function scanEquippedStatsViaFiber() {
+    if (!Core.walkFiberAll) return null;
+    const seenItemIds = new Set();
+    const sums = { hit: 0, damage: 0, critDamage: 0, fighterCritChance: 0 };
+    let items = 0;
+    Core.walkFiberAll((cand) => {
+      if (!cand || !Array.isArray(cand.stats)) return false;
+      const id = cand._id;
+      if (id != null && seenItemIds.has(id)) return false;
+      // Implicits count too: they are on the same item and contribute the same
+      // way. Reading only `stats` would silently undercount every item that
+      // carries one.
+      const rows = cand.stats.concat(Array.isArray(cand.implicits) ? cand.implicits : []);
+      let matched = false;
+      for (const s of rows) {
+        if (!s || typeof s.value !== 'number' || !GEAR_STAT_TYPES.includes(s.type)) continue;
+        sums[s.type] += s.value * equipmentTierMultiplier(s.tier);
+        matched = true;
+      }
+      if (!matched) return false;
+      if (id != null) seenItemIds.add(id);
+      items++;
+      return true;
+    });
+    return items ? { ...sums, items } : null;
+  }
+
   function scanEquippedCritChanceViaFiber() {
     if (!Core.walkFiberAll) return null;
     const seenItemIds = new Set();
@@ -1331,6 +1718,8 @@
 
     const perFighterGold = liveBudgetB / 6;
     const critByClass = {};
+    const gearByClass = {};
+    const boughtByClass = {};
     let stopped = false;
     for (let i = 0; i < 6; i++) {
       if (optimizerAbort) { stopped = true; break; }
@@ -1339,10 +1728,78 @@
       buttons[i].closest('div')?.click();
       await sleep(700);
       if (optimizerAbort) { stopped = true; break; }
-      const found = scanEquippedCritChance();
+      // The whole assembled stat block, which includes gear, implicits and
+      // whatever is already bought — not just Crit Chance. See
+      // scanEquippedStatsViaFiber for the bundle-traced item shape and why
+      // ignoring gear changes the ANSWER rather than only the reported totals.
+      // Points already bought, read from the game's own allocation inputs —
+      // the same boxes the allocator later fills. Reported so a run says what
+      // it actually saw rather than implying it started from nothing.
+      const bought = {};
+      for (const stat of ['Hit', 'Damage', 'Crit Damage']) {
+        const input = findStatInput(stat);
+        const v = input ? Core.parseNumber(input.value) : null;
+        bought[stat] = Number.isFinite(v) ? v : 0;
+      }
+      boughtByClass[cls] = bought;
+
+      // TWO SOURCES, EACH FOR WHAT IT IS ACTUALLY GOOD AT. Not a preference
+      // order — a division of labour, and the reason is structural.
+      //
+      //  * BASE STATS (Hit, Damage, Crit Damage) come from the number the game
+      //    displays beside each allocation slider. At 0 allocation that number
+      //    IS the gear total, and it rises as points are added. It therefore
+      //    already folds in gear, implicits, enchants and any source nobody
+      //    here has enumerated — which is the exact failure mode of adding up
+      //    items by hand.
+      //
+      //  * FIGHTER-PREFIXED STATS (fighterCritChance, and multistrike/thorns/
+      //    lifesteal if they ever matter here) CANNOT come from that number,
+      //    and this is the correction the user supplied: a slider total can
+      //    only show a stat that HAS a slider. An implicit granting thorns or
+      //    crit chance is real, contributes, and appears nowhere on the
+      //    allocation screen. Those must come from the item scan, which is
+      //    also the read already proven to work live.
+      //
+      // So the fiber scan runs ALWAYS, not just as a fallback — an earlier
+      // draft only ran it when the card read failed, which would have silently
+      // dropped Crit Chance on every account where the cards read fine.
+      const viaFiber = scanEquippedStatsViaFiber();
+
+      const fromCards = {};
+      let cardsOk = true;
+      for (const [stat, key] of [['Hit', 'hit'], ['Damage', 'damage'], ['Crit Damage', 'critDamage']]) {
+        const total = readStatTotalFromCard(stat);
+        const g = gearFromDisplayedTotal(stat, total, bought[stat]);
+        if (g == null) { cardsOk = false; break; }
+        fromCards[key] = g;
+      }
+
+      // FIBER FIRST, reversed 2026-09-08 on evidence. The card-text read was
+      // preferred for one build because it is the game's own total — but on a
+      // live account it produced a gear Crit Damage of 5,380 against a true
+      // value near 48, by picking the wrong number out of the card's text.
+      // The fiber read, once the tier multiplier is applied, reproduces the
+      // rendered card to display precision on three stats across two tiers.
+      //
+      // Structure beats text scraping when the structure is verified: the card
+      // read stays as a fallback, but it is the one that has been wrong.
+      if (viaFiber) gearByClass[cls] = { ...viaFiber, source: `${viaFiber.items} item(s) via fiber` };
+      else if (cardsOk) gearByClass[cls] = { ...fromCards, source: 'page totals (fiber found nothing)' };
+
+      const found = viaFiber && viaFiber.fighterCritChance
+        ? 0.1 + viaFiber.fighterCritChance    // fighters.critChance.base + gear
+        : scanEquippedCritChance();
       critByClass[cls] = found;
+
+      const g = gearByClass[cls];
       optLog(found !== null
         ? `  ${cls}: ${(found * 100).toFixed(2)}% Crit Chance`
+          + (g
+            ? `, gear (${g.source}): Hit ${Core.formatNumber(Math.round(g.hit))} / Damage ${Core.formatNumber(Math.round(g.damage))} / Crit Dmg ${Core.formatNumber(Math.round(g.critDamage))}`
+            : ', gear NOT read')
+          + (bought.Hit || bought.Damage || bought['Crit Damage']
+            ? `, already bought H${Core.formatNumber(bought.Hit)}/D${Core.formatNumber(bought.Damage)}/C${Core.formatNumber(bought['Crit Damage'])}` : '')
         : `  ${cls}: could not read Crit Chance — assuming the 0.1 base only.`);
     }
 
@@ -1358,9 +1815,17 @@
     const stats = {};
     for (const cls of liveLayout) {
       const critChance = critByClass[cls] != null ? critByClass[cls] : 0.1;
+      const gear = gearByClass[cls] || { hit: 0, damage: 0, critDamage: 0 };
+      // A World Boss plan REPLACES an allocation rather than adding to it, so
+      // the starting point is zero bought points — the preset is reset before
+      // it is filled. Gear is different: it is not spendable and is always
+      // there, so it belongs in the objective as a fixed offset.
       const alloc = allocateFighterForWorldBoss({
         goldBudget: perFighterGold, bossLevel: level,
         currentHitRaw: 0, currentDamageRaw: 0, currentCritDamageRaw: 0, critChance,
+        gearHitBonus: gear.hit || 0,
+        gearDamageBonus: gear.damage || 0,
+        gearCritDamageBonus: gear.critDamage || 0,
       });
       stats[cls] = Object.assign(emptyStatBlock(), {
         Hit: alloc.hitRaw, Damage: alloc.damageRaw, 'Crit Damage': alloc.critDamageRaw,
@@ -1368,12 +1833,19 @@
       // Show the actual reasoning per fighter, not just the final numbers —
       // which target it aimed for, whether the budget covered it, and what
       // crit chance the split was computed against.
-      optLog(`  ${cls}: Hit target ${Core.formatNumber(alloc.hitTargetFinal)} final `
-        + `(${alloc.hitFullyCovered ? 'fully covered' : 'budget too small — all gold spent on Hit'}, `
-        + `${Core.formatNumber(alloc.hitCostGold)} gold) → ${Core.formatNumber(alloc.hitRaw)} raw Hit. `
-        + `Remainder: ${Core.formatNumber(alloc.damageRaw)} Damage / ${Core.formatNumber(alloc.critDamageRaw)} `
-        + `Crit Damage, split against ${(critChance * 100).toFixed(2)}% Crit Chance`
-        + `${critByClass[cls] == null ? ' (assumed, not scanned)' : ''}.`);
+      // REWRITTEN 2026-09-08 — the old line described an algorithm that no
+      // longer exists. It said "Hit target X (fully covered) -> Y raw Hit.
+      // Remainder: ...", which is the buy-Hit-first-then-split strategy that
+      // was replaced precisely because it was wrong. A log that narrates a
+      // superseded method is worse than no log: it reads as confirmation.
+      optLog(`  ${cls}: ${Core.formatNumber(alloc.hitRaw)} Hit / ${Core.formatNumber(alloc.damageRaw)} Damage / `
+        + `${Core.formatNumber(alloc.critDamageRaw)} Crit Damage `
+        + `→ ${(alloc.achievedHitChance * 100).toFixed(1)}% hit chance`
+        + (alloc.stoppedBelowCap
+          ? ` (deliberately below the ${(0.95 * 100).toFixed(0)}% cap — a Hit point there is worth zero, damage still pays)`
+          : ' (at the cap)')
+        + `. Crit Chance ${(critChance * 100).toFixed(2)}%${critByClass[cls] == null ? ' (assumed, not scanned)' : ''}`
+        + `, gear ${gearByClass[cls] ? 'included' : 'NOT read — plan assumes none'}.`);
     }
     // Pending, not pushed yet — the calculation is done, but "add to profile
     // list" is now its own explicit step rather than happening automatically.
@@ -1381,7 +1853,7 @@
     // default name doesn't repeat it.
     pendingOptimizerResult = {
       classLayout: liveLayout.slice(), stats, sourceBudgetB: liveBudgetB,
-      meta: { bossLevel: level, critByClass },
+      meta: { bossLevel: level, critByClass, gearByClass },
     };
     if (ui.optResultName) ui.optResultName.value = `World Boss L${level}`;
     if (ui.optResultRow) ui.optResultRow.hidden = false;
@@ -1716,7 +2188,8 @@
         upsertProfile, deleteProfileHard, setArchived, duplicateProfile,
         detectAndNormalizeImport, exportNative, exportFriendFormat,
         resolveProfileAgainstLayout,
-        bossDodgeAtLevel, hitTargetForBossLevel,
+        bossDodgeAtLevel, hitTargetForBossLevel, hitChanceAt, expectedDamage,
+        scanEquippedStatsViaFiber, readStatTotalFromCard, gearFromDisplayedTotal, equipmentTierMultiplier,
         statFinalFromRaw, rawPointsForFinalStat, scaleLevel,
         goldCostForPoints, maxLevelForBudget, splitDamageCritDamageByGold, allocateFighterForWorldBoss,
       },

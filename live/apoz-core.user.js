@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.8.1
+// @version      6.9.0
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.8.1",
+    "version": "6.9.0",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -212,8 +212,22 @@
     // re-clamp pass below — not patched at each call site.
     //
     // Pure, no DOM: unit-testable directly (userscripts/tests/core-ui-geometry.mjs).
+    // A DEGENERATE VIEWPORT IS A REAL STATE, NOT A HYPOTHETICAL. Core runs at
+    // document-start, and `window.innerWidth/innerHeight` are 0 before the page
+    // has been laid out — and stay 0 in a backgrounded or zero-sized frame.
+    // Reading 0 and believing it is how every window ends up 72x72 (see
+    // clampRectToViewport), which is the most likely root of the long-standing
+    // "windows start very small and always have to be expanded" report.
+    //
+    // So: fall back through the measurements that can still be right, and
+    // report 0 only when everything genuinely is 0 — the clamp then knows to
+    // leave the rect alone rather than crush it.
     function viewportRect() {
-      return { w: window.innerWidth, h: window.innerHeight };
+      const de = document.documentElement;
+      return {
+        w: window.innerWidth || (de && de.clientWidth) || 0,
+        h: window.innerHeight || (de && de.clientHeight) || 0,
+      };
     }
 
     // Keeps at least `minVisible` px of `rect` reachable inside `viewport` on
@@ -226,6 +240,15 @@
       opts = opts || {};
       const minVisible = opts.minVisible == null ? 72 : opts.minVisible;
       const margin = opts.margin == null ? 4 : opts.margin;
+      // NOTHING TO CLAMP TO. A viewport of 0 (or negative) is not a very small
+      // screen, it is a measurement that has not happened yet — before layout,
+      // in a hidden frame, in a zero-sized pane. Clamping against it produces a
+      // minVisible x minVisible window: measured, a 460x560 Settings panel
+      // becomes 72x72, which then gets PERSISTED and looks like a bug in the
+      // window framework forever after. Returning the rect untouched leaves a
+      // window that may be off-screen for one frame, which the next resize or
+      // reanchor corrects — strictly better than one nobody can read.
+      if (!(viewport.w > 0) || !(viewport.h > 0)) return { ...rect };
       const w = Math.min(rect.w, Math.max(minVisible, viewport.w - margin * 2));
       const h = Math.min(rect.h, Math.max(minVisible, viewport.h - margin * 2));
       const minX = margin - (w - minVisible);
@@ -949,7 +972,7 @@
       const style = document.createElement('style');
       style.id = 'apoz-window-style';
       style.textContent = `
-        .apoz-window { position: fixed; z-index: 999997; display: flex; flex-direction: column;
+        .apoz-window { position: fixed; z-index: 999000; display: flex; flex-direction: column;
           background: var(--apoz-card); color: var(--apoz-popover-foreground); border: 1px solid var(--apoz-border);
           border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.04);
           font: 12px ${CORE_FONT}; overflow: hidden; }
@@ -999,14 +1022,14 @@
            inline per-open via getBoundingClientRect, same anchoring approach
            as the main dropdown, just for a two-or-three-item list instead of
            the whole Core menu. */
-        .apoz-ui-menu { position: fixed; z-index: 1000050; background: var(--apoz-solid-card);
+        .apoz-ui-menu { position: fixed; z-index: 1000500; background: var(--apoz-solid-card);
           color: var(--apoz-solid-popover-foreground); border: 1px solid var(--apoz-solid-border);
           border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.45); padding: 4px; min-width: 170px;
           font: 12px ${CORE_FONT}; }
         .apoz-ui-menu-item { display: block; width: 100%; text-align: left; background: none; border: none;
           color: inherit; font: inherit; font-size: 11.5px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
         .apoz-ui-menu-item:hover { background: var(--apoz-input); }
-        .apoz-ui-modal-overlay { position: fixed; inset: 0; z-index: 1000001; background: rgba(0,0,0,.45);
+        .apoz-ui-modal-overlay { position: fixed; inset: 0; z-index: 1001000; background: rgba(0,0,0,.45);
           display: flex; align-items: center; justify-content: center; font: 12px ${CORE_FONT}; }
         .apoz-ui-modal { background: var(--apoz-card); color: var(--apoz-popover-foreground);
           border: 1px solid var(--apoz-border); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5);
@@ -1060,8 +1083,40 @@
     // import/export-style dialog opened over a module's main window, say)
     // live in a permanently higher band instead of merely a higher CURRENT
     // value, so a later click on a regular window can never climb above one.
-    let topZIndex = 999997;
-    let topZIndexOnTop = 1000100;
+    // ---- THE STACKING ORDER, DECLARED ONCE ----
+    //
+    // These were ad-hoc numbers scattered between the stylesheet and this
+    // function, and they were wrong: an `alwaysOnTop` window sat at 1000100
+    // while the confirm-dialog overlay sat at 1000001, so the "Delete this
+    // profile?" dialog rendered BEHIND the window that raised it — reported
+    // 2026-09-08, and unfixable by nudging one number without knowing what the
+    // others were.
+    //
+    // Bottom to top, with a 1000 gap between bands so a band can grow (windows
+    // increment on click) without ever colliding with the one above:
+    //
+    //   999000  regular windows            (click-to-front increments)
+    //   999500  the Core group + dropdown
+    //  1000000  alwaysOnTop windows        (a dialog-ish window over its owner)
+    //  1000500  anchored menus (ui.menu)
+    //  1001000  modal overlays             — MUST beat every window, or a
+    //                                        confirmation is unreachable
+    //  1002000  toasts                     — never obscured; they self-dismiss
+    //
+    // The rule that fixes the reported bug and stops it recurring: **a modal
+    // outranks every window, including an always-on-top one.** A window can be
+    // pinned above its siblings; nothing can be pinned above the thing asking
+    // whether to destroy something.
+    const Z = Object.freeze({
+      window: 999000,
+      chrome: 999500,
+      windowOnTop: 1000000,
+      menu: 1000500,
+      modal: 1001000,
+      toast: 1002000,
+    });
+    let topZIndex = Z.window;
+    let topZIndexOnTop = Z.windowOnTop;
     function bringToFront(el, alwaysOnTop) {
       if (alwaysOnTop) { topZIndexOnTop += 1; el.style.zIndex = String(topZIndexOnTop); }
       else { topZIndex += 1; el.style.zIndex = String(topZIndex); }
@@ -1496,7 +1551,7 @@
         #apoz-core-group:hover { border-color: var(--apoz-primary); }
         #apoz-core-group:active { box-shadow: inset 0 1px 2px rgba(0,0,0,.3); }
         /* Only when no nav bar could be found - see anchorGroup(). */
-        #apoz-core-group.apoz-core-floating { position: fixed; top: 8px; right: 8px; z-index: 999998;
+        #apoz-core-group.apoz-core-floating { position: fixed; top: 8px; right: 8px; z-index: 999500;
           background: var(--apoz-card); box-shadow: 0 4px 16px rgba(0,0,0,.4); }
         #apoz-core-btn { background: transparent; color: var(--apoz-primary); border: none;
           font-weight: 600; letter-spacing: .01em; padding: 0 8px; cursor: pointer; font-size: 11px;
@@ -1520,7 +1575,7 @@
         .apoz-core-quick-badge::after { content: ''; position: absolute; top: 1px; right: 1px;
           width: 5px; height: 5px; border-radius: 50%; background: #e0483e;
           animation: apoz-core-blink 1.1s ease-in-out infinite; }
-        #apoz-core-dropdown { position: fixed; z-index: 999999; background: var(--apoz-card);
+        #apoz-core-dropdown { position: fixed; z-index: 999501; background: var(--apoz-card);
           color: var(--apoz-popover-foreground); border: 2px solid var(--apoz-border); border-radius: 6px;
           min-width: 220px; box-shadow: 0 8px 24px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.04);
           padding: 4px; font: 12px ${CORE_FONT}; }
@@ -1539,15 +1594,34 @@
            not just the dedicated info-icon SVG. Kept off native title attrs
            on these deliberately: two overlapping tooltips (one native, one
            custom) is worse than one. */
+        /* An element carrying the hidden attribute must actually be hidden.
+           The UA rule is only [hidden] { display: none }, which ANY inline
+           display beats — so a row built with an inline display:flex and then
+           hidden via el.hidden = true stays fully on screen, looking like a
+           control that should not be there. That is exactly what the Settings
+           capacity row did. */
+        [hidden] { display: none !important; }
+
+        /* DISPLAY-TOGGLED, not opacity-faded, and the fade is deliberately the
+           thing traded away.
+           An absolutely-positioned tooltip still contributes to the SCROLL AREA
+           of its nearest scrolling ancestor even at opacity 0. The Settings
+           body scrolls, so every info icon was silently adding its own 200-230px
+           of horizontal scroll width — measured at 658px of content in a 445px
+           box, i.e. a settings panel that scrolled sideways for no visible
+           reason. Hiding by visibility does not fix it either: a
+           hidden-but-laid-out box still counts. display:none removes it from
+           layout entirely, which costs an 80ms fade-in and buys a panel that
+           does not look broken. */
         [data-tooltip] { position: relative; }
         [data-tooltip]::after { content: attr(data-tooltip); position: absolute;
           top: 130%; left: 0; background: var(--apoz-solid-card); color: var(--apoz-solid-popover-foreground);
           border: 1px solid var(--apoz-solid-border); border-radius: 4px; padding: 5px 7px; font-size: 10px;
-          line-height: 1.35; width: 200px; white-space: normal; opacity: 0; pointer-events: none;
-          transition: opacity .08s ease .05s; box-shadow: 0 4px 12px rgba(0,0,0,.5); z-index: 1000002; }
+          line-height: 1.35; width: 200px; white-space: normal; pointer-events: none;
+          display: none; box-shadow: 0 4px 12px rgba(0,0,0,.5); z-index: 1002500; }
         [data-tooltip][data-tooltip-wide]::after { width: 230px; }
         [data-tooltip][data-tooltip-right]::after { left: auto; right: 0; }
-        [data-tooltip]:hover::after { opacity: 1; }
+        [data-tooltip]:hover::after { display: block; }
         .apoz-core-separator { height: 1px; background: var(--apoz-border); margin: 6px 2px; }
         .apoz-core-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 5px;
           cursor: pointer; }
@@ -1582,7 +1656,7 @@
         .apoz-core-self-update-btn { background: none; border: none; color: var(--apoz-primary);
           font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; padding: 0; }
         .apoz-core-self-update-btn:hover { text-decoration: underline; }
-        #apoz-core-toasts { position: fixed; right: 14px; bottom: 14px; z-index: 1000000;
+        #apoz-core-toasts { position: fixed; right: 14px; bottom: 14px; z-index: 1002000;
           display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
           pointer-events: none; font: 12px ${CORE_FONT}; }
         .apoz-core-toast { pointer-events: auto; display: flex; align-items: center; gap: 8px;
@@ -2204,7 +2278,7 @@
       // no explanation is worse than an absent one.
       const capRow = document.createElement('div');
       capRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:8px;';
-      capRow.hidden = true;
+      capRow.style.display = 'none';
       const capLabel = document.createElement('label');
       capLabel.style.cssText = 'font-size:11px; flex:1;';
       capLabel.textContent = 'Workers';
@@ -2262,7 +2336,13 @@
         if (s.detail) hostStatusLine.appendChild(detail);
 
         const cap = s.health && s.health.capacity;
-        capRow.hidden = !(s.state === HOST_STATES.READY && cap);
+        // `style.display`, not `.hidden`. This row carries an inline
+        // `display:flex`, and an inline display beats the UA's
+        // `[hidden]{display:none}` — so setting `.hidden` left it fully
+        // visible. The stylesheet now also carries an `!important` version of
+        // that rule so the same mistake cannot be made silently elsewhere, but
+        // setting display directly is what this row actually needs.
+        capRow.style.display = (s.state === HOST_STATES.READY && cap) ? 'flex' : 'none';
         if (cap) {
           capLabel.firstChild.nodeValue = `Workers (${cap.busy} busy, up to ${cap.maxUseful} useful) `;
           if (document.activeElement !== capInput) capInput.value = String(cap.workers);
