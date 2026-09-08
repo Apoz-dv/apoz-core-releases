@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.8.0
+// @version      6.8.1
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.8.0",
+    "version": "6.8.1",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -3257,15 +3257,33 @@
     const lines = [
       '--- Apoz Core diagnostic ---',
       `Core:      v${Core.version}  release ${Core.release.channel} ${Core.release.version}`,
+      // The first question when a change "did not show up" is which copy is on
+      // screen. A dev build is the local one loaded off disk by the proxy and
+      // updates the moment you rebuild; a live build only changes when
+      // Tampermonkey runs an update check, which a page reload does not.
+      Core.release.channel === 'dev'
+        ? '           ^ LOCAL build via the dev proxy — rebuild + refresh the tab to see changes.'
+        : '           ^ INSTALLED build — a page reload does NOT update it; use Check for updates.',
       `Menu:      ${group ? (document.body.contains(group) ? 'present in the page' : 'built but detached') : 'NOT BUILT'}`,
-      `Anchor:    ${group && group.classList.contains('apoz-core-floating') ? 'floating (no nav bar found)' : 'in the nav bar'}`,
+      // Three states, not two. This used to be a bare ternary, so a menu that
+      // did not exist reported "in the nav bar" — the diagnostic contradicting
+      // its own line above it, which is the fastest way to lose a reader's
+      // trust in the whole output.
+      `Anchor:    ${!group ? 'n/a — no menu was built' : group.classList.contains('apoz-core-floating') ? 'floating (no nav bar found)' : 'in the nav bar'}`,
       `Nav link:  ${document.querySelector('a[href="/game/log"]') ? 'found' : 'NOT FOUND'}`,
       `Modules:   ${q.length} queued`,
     ];
     for (const e of q) {
+      // `hostVersion` differing from `version` means something other than this
+      // module's own userscript loaded it — normally the dev proxy, which
+      // `@require`s every file into ONE script so they all share its GM_info.
+      // Saying so is the point: this line used to print the proxy's version as
+      // if it were the module's, which is a wrong answer from the one tool
+      // whose job is answering "what am I actually running".
+      const loadedBy = e.hostVersion && e.hostVersion !== e.version ? `  [loaded by a v${e.hostVersion} script]` : '';
       lines.push(`  - ${e.id} v${e.version || '?'}`
         + ` ${e.claimed ? 'claimed' : 'NOT CLAIMED'}`
-        + `${e.failed ? ' FAILED TO START' : ''}${e.duplicate ? ' (duplicate, not run)' : ''}`);
+        + `${e.failed ? ' FAILED TO START' : ''}${e.duplicate ? ' (duplicate, not run)' : ''}${loadedBy}`);
     }
     const reg = Core.__modulesForTest;
     lines.push(`Registered: ${Object.keys(reg).join(', ') || 'none'}`);

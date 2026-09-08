@@ -2,7 +2,7 @@
 // @name         Apoz Core: Combat Slot ETA Tracker
 // @namespace    apoz-core
 // @author       Apoz
-// @version      4.7.3
+// @version      4.7.4
 // @description  Apoz Core module (requires "Apoz Core"). Read-only overlay: estimates time until the Combat pet slot upgrade is affordable from your live gold and the exact upgrade-cost formula (no need to sit on the Pets page), rings a gentle alarm - and optionally a desktop notification - when it is, and stays accurate in a backgrounded tab. Ships the Party Gold ROI calculator. No auto-clicking.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -41,15 +41,15 @@
 
   // ---- Core intake shim (generated) ----
   // Requires the "Apoz Core" userscript. Without it this module does nothing.
-  (function (id, factory) {
-    var v = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || null;
+  (function (id, version, factory) {
+    var host = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || null;
     var q = (window.__apozModules = window.__apozModules || []);
-    q.push({ id: id, version: v, factory: factory, claimed: false, descriptor: null });
+    q.push({ id: id, version: version, hostVersion: host, factory: factory, claimed: false, descriptor: null });
     if (window.__ApozCore && window.__ApozCore.claim) { window.__ApozCore.claim(); return; }
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("eta-tracker", function (Core) {
+  })("eta-tracker", "4.7.4-dev", function (Core) {
 
 
   const ACTION_MS = 10_000;
