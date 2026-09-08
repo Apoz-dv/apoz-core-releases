@@ -2,7 +2,7 @@
 // @name         Apoz Core: Fighter Allocator
 // @namespace    apoz-core
 // @author       Apoz
-// @version      1.8.0
+// @version      1.9.0
 // @description  Apoz Core module (requires "Apoz Core"). Allocates gold-purchased fighter stats (Health/Damage/Hit/Dodge/Defense/Crit Damage) across your 6 fighters. Class-keyed profiles with a full table (category, classes, date, source), World Boss-aware math (Hit target from boss level, exact Damage/Crit Damage split), and two-way import/export with the community "Fighter Optimizer" gold-plan format. Fills the game's own stat inputs; never auto-clicks Save Preset.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -57,7 +57,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("fighter-allocator", "1.8.0-dev", function (Core) {
+  })("fighter-allocator", "1.9.0-dev", function (Core) {
 
 
   const MODULE_ID = 'fighter-allocator';
@@ -387,6 +387,18 @@
   // ==== profile store — dirty-flag + debounced flush, exactly eta-tracker's ====
   // ==== pattern (INSTRUMENTATION.md §5 S1): no per-change synchronous write  ====
   let profiles = [];
+
+  // Persisted alongside `profiles` in the same STORAGE_KEY blob — see
+  // recordBossLevelObservation()/predictBossLevel() below for the shape and
+  // why it is two fields, not one.
+  let bossLevelMemory = { lastKnown: null, log: [] };
+
+  // Module settings (item 5/6): allocation pacing and the opt-in auto-save
+  // gate. Same store, same debounced flush — these are rare, deliberate
+  // changes (a Settings-tab toggle), not worth a second persistence path.
+  const DEFAULT_MODULE_SETTINGS = Object.freeze({ allocatePace: 'fast', autoSavePreset: false });
+  let moduleSettings = Object.assign({}, DEFAULT_MODULE_SETTINGS);
+
   let storeDirty = false;
   function markDirty() { storeDirty = true; }
 
@@ -394,7 +406,9 @@
     if (!storeDirty) return;
     storeDirty = false;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ profiles, savedAt: Date.now() }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        profiles, bossLevelMemory, settings: moduleSettings, savedAt: Date.now(),
+      }));
     } catch (e) { /* storage unavailable, ignore */ }
   }
 
@@ -403,7 +417,21 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       const saved = raw ? JSON.parse(raw) : null;
       if (saved && Array.isArray(saved.profiles)) profiles = saved.profiles;
+      if (saved && saved.bossLevelMemory && typeof saved.bossLevelMemory === 'object') {
+        bossLevelMemory = {
+          lastKnown: saved.bossLevelMemory.lastKnown || null,
+          log: Array.isArray(saved.bossLevelMemory.log) ? saved.bossLevelMemory.log : [],
+        };
+      }
+      if (saved && saved.settings && typeof saved.settings === 'object') {
+        moduleSettings = Object.assign({}, DEFAULT_MODULE_SETTINGS, saved.settings);
+      }
     } catch (e) { profiles = []; }
+  }
+
+  function setModuleSetting(key, value) {
+    moduleSettings = Object.assign({}, moduleSettings, { [key]: value });
+    markDirty();
   }
 
   function upsertProfile(profile) {
@@ -812,9 +840,12 @@
     return displayedTotal - fromPoints;
   }
 
-  // The one write this module performs — Assist, not Act (INSTRUMENTATION.md
-  // §7): fills a value into a real input the game already renders. It never
-  // clicks Save; the player commits their own allocation. Ported from the
+  // The slider-filling write this module performs — Assist, not Act
+  // (INSTRUMENTATION.md §7): fills a value into a real input the game
+  // already renders. By itself it never touches Save; the player commits
+  // their own allocation UNLESS they have explicitly opted into auto-save
+  // (item 6, Settings tab — see attemptAutoSave()'s own header for the gates
+  // that stand between "sliders filled" and "Save clicked"). Ported from the
   // community script's setReactInput, same mechanism (React's own value
   // setter, then input+change events) since it's the part already proven to
   // work reliably against this page.
@@ -827,6 +858,32 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // ==== allocation pacing (item 5, Settings tab) ====
+  //
+  // The fill loop clicks a fighter, waits for the SPA to re-render, writes
+  // each of the 6 sliders with a short wait between them, then waits once
+  // more before moving to the next fighter. REPORTED: "feels very slow"
+  // running all 6 fighters end to end — the old numbers alone (before
+  // verification or Save even start) added up to 700+6*250+400=2600ms per
+  // fighter, 15.6s total. These sleeps only exist to give the page a chance
+  // to catch up between writes; verifyAppliedValues() below is what actually
+  // PROVES each value landed, so a faster pace that occasionally races ahead
+  // of a slow render is CAUGHT there, not silently trusted — that is what
+  // justifies a faster DEFAULT rather than leaving the original, more
+  // conservative numbers as the default forever.
+  //
+  // `slow` is the ORIGINAL, live-proven pacing verbatim, kept as the
+  // fallback for anyone whose page can't keep up with `fast` — copied, not
+  // re-derived, so it can never accidentally drift from the numbers this
+  // module actually shipped with for months.
+  const ALLOCATE_PACING = {
+    fast: { selectMs: 300, statMs: 100, settleMs: 150 },
+    slow: { selectMs: 700, statMs: 250, settleMs: 400 },
+  };
+  function allocatePacing() {
+    return ALLOCATE_PACING[moduleSettings.allocatePace === 'slow' ? 'slow' : 'fast'];
+  }
+
   // Fills every matched position's 6 stat inputs. Non-World-Boss profiles
   // (or a World-Boss profile applied at a different budget than it was
   // saved at) are rescaled via the same sqrt relationship the community
@@ -835,20 +892,21 @@
   // allocation; the whole thing is quick, so a per-fighter grain is enough,
   // it never leaves a fighter half-filled.
   async function applyResolved(matched, profile, liveButtons, budgetB, log, shouldAbort) {
+    const pace = allocatePacing();
     for (const { class: cls, index } of matched) {
       if (shouldAbort && shouldAbort()) throw new Error('Stopped.');
       const fighterStats = profile.stats[cls];
       liveButtons[index].closest('div')?.click();
       if (log) log(`Selecting ${cls}…`);
-      await sleep(700);
+      await sleep(pace.selectMs);
       for (const stat of STATS) {
         const input = findStatInput(stat);
         if (!input) throw new Error(`Could not find the ${stat} input for ${cls} — the page layout may have changed.`);
         const target = scaleLevel(fighterStats[stat], budgetB, profile.sourceBudgetB || budgetB);
         setReactInput(input, target);
-        await sleep(250);
+        await sleep(pace.statMs);
       }
-      await sleep(400);
+      await sleep(pace.settleMs);
     }
   }
 
@@ -1057,21 +1115,36 @@
     padWithGhostRows(table, columns.length + 1, active.length);
     wrap.appendChild(table);
     if (ui.showArchived && archived.length) {
-      const divider = document.createElement('div');
-      divider.style.cssText = 'border-top:1px solid var(--apoz-border, var(--border)); margin:10px 0 6px; '
-        + 'padding-top:6px; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; opacity:.5;';
-      divider.textContent = `Archived (${archived.length})`;
-      wrap.appendChild(divider);
+      wrap.appendChild(buildArchivedDivider(archived.length));
       wrap.appendChild(Core.ui.table({ columns, rows: archived, rowActions }));
     }
     return wrap;
+  }
+
+  // REDESIGNED 2026-09-08 — reported "too fragmented, needs to be thinner and
+  // less fragmented". The old version was a border-top rule with an uppercase
+  // label sitting BELOW it as its own line — two visual fragments (a rule,
+  // then a caption) reading as two things instead of one divider. This is a
+  // single element: one thin 1px rule with the label sitting ON it
+  // (::before/::after fill the space either side, in the .apoz-fa-divider
+  // rule below), all on design tokens so it stays "obviously a separator"
+  // without adding a new opacity/font-size literal.
+  function buildArchivedDivider(count) {
+    const divider = document.createElement('div');
+    divider.className = 'apoz-fa-divider';
+    divider.textContent = `Archived (${count})`;
+    return divider;
   }
 
   // Placeholder rows up to a resting count. Not decoration: without them an
   // empty plan list renders a header with nothing underneath, which reads as a
   // broken table rather than an empty one — and a table that grows from zero
   // resizes the whole panel the moment you add your first plan.
-  const RESTING_ROWS = 5;
+  // Was 5 — reported "the plans table should be longer by default even when
+  // empty... looks stubby". Raised alongside .apoz-fa-table-scroll's
+  // min-height (buildPanelContent's <style>) so the resting shape actually
+  // reads as deliberate; the max-height SCROLL CEILING there is unchanged.
+  const RESTING_ROWS = 8;
   function padWithGhostRows(table, colCount, realRows) {
     const body = table.querySelector('tbody');
     if (!body) return;
@@ -1143,7 +1216,10 @@
   // page actually reflects the target — an internal check that doesn't
   // depend on guessing the shape of the game's own save-confirmation toast —
   // plus a best-effort watch for that toast too, since a real "the game
-  // itself agrees" signal is worth having when it's there.
+  // itself agrees" signal is worth having when it's there. Save Preset is
+  // still the PLAYER'S to press (CLAUDE.md rule 4) UNLESS auto-save is
+  // explicitly turned on in Settings — see attemptAutoSave(), reached only
+  // after verification is clean.
   async function loadProfileFlow(profile) {
     refreshLiveReads();
     setStatus(`Loading "${profile.name}"…`, 'info');
@@ -1196,12 +1272,22 @@
         reportState('problem', 'check sliders');
         return;
       }
-      setStatus('All sliders confirmed on target. Press Save Preset in-game to commit — watching for confirmation…', 'success');
-      const sawSaveToast = await watchForSaveConfirmation(15000);
-      setStatus(sawSaveToast
-        ? '✓ Successfully saved — the game confirmed it.'
-        : 'Sliders are set and verified — press Save Preset in-game if you haven\'t yet (no in-game confirmation seen within 15s, but the values on the page are correct).',
-      sawSaveToast ? 'success' : 'info');
+      setStatus('All sliders confirmed on target.', 'success');
+
+      // OPT-IN, off by default (moduleSettings.autoSavePreset — Settings tab,
+      // item 5/6). See attemptAutoSave()'s own header for every gate and why
+      // each exists; this only ever gets HERE, past a clean verification,
+      // which is itself the first of those gates.
+      const autoSaved = moduleSettings.autoSavePreset ? await attemptAutoSave() : false;
+      if (!autoSaved) {
+        setStatus('Press Save Preset in-game to commit — watching for confirmation…', 'info');
+        const sawSaveToast = await watchForSaveConfirmation(SAVE_CONFIRMATION_WATCH_MS);
+        setStatus(sawSaveToast
+          ? '✓ Successfully saved — the game confirmed it.'
+          : `Sliders are set and verified — press Save Preset in-game if you haven't yet `
+            + `(no in-game confirmation seen within ${SAVE_CONFIRMATION_WATCH_MS / 1000}s, but the values on the page are correct).`,
+        sawSaveToast ? 'success' : 'info');
+      }
     } catch (err) {
       console.error('[fighter-allocator]', err);
       // The user pressing Stop is not a failure, and flattening the two into
@@ -1288,6 +1374,120 @@
     });
   }
 
+  // STREAMLINED 2026-09-08 — reported "feels very slow": this watch was
+  // always only a BONUS signal (see the comment above; verifyAppliedValues
+  // is the real proof the values are correct), so it never needed to hold
+  // the status line for 15s on the common case where the game's own toast
+  // either shows within a second or two or never shows at all (different
+  // wording, or none — both are equally likely given the toast text is
+  // unconfirmed, per HANDOFF.md). 5s stays generous next to how fast the
+  // community script's own toast reportedly appears.
+  const SAVE_CONFIRMATION_WATCH_MS = 5000;
+
+  // Reads BOTH sides of "PRESET ALLOCATED X / Y" — getTotalBudget() above
+  // only ever wanted Y (the usable total, for the optimiser's budget math);
+  // the auto-save gate below needs X too, because it is the one number that
+  // says whether what was just filled is something the GAME itself would
+  // consider affordable, independent of trusting our own arithmetic to have
+  // reproduced that correctly.
+  function getAllocatedAndBudget() {
+    const pageText = document.body.innerText || '';
+    const idx = pageText.toUpperCase().indexOf('PRESET ALLOCATED');
+    if (idx === -1) return null;
+    const section = pageText.slice(idx, idx + 300);
+    const m = section.match(/PRESET ALLOCATED\s*([\d.,]+\s*[a-z]{0,2})\s*\/\s*([\d.,]+\s*[a-z]{0,2})/i);
+    if (!m) return null;
+    const allocated = Core.parseNumber(m[1].replace(/\s+/g, ''));
+    const budget = Core.parseNumber(m[2].replace(/\s+/g, ''));
+    if (!(budget > 0) || !(allocated >= 0)) return null;
+    return { allocated, budget };
+  }
+
+  // Locates the game's own "Save Preset" button by its rendered text — same
+  // approach as getClassFromButton, because nothing here has a stable
+  // selector to key off. UNVERIFIED against a live page, same as the rest of
+  // this file's DOM layer (HANDOFF.md) — flagged, not hidden, and exactly
+  // why attemptAutoSave() below refuses cleanly rather than clicking blind
+  // when this comes back null.
+  function findSavePresetButton() {
+    return [...document.querySelectorAll('button')].find((btn) => /save preset/i.test(text(btn))) || null;
+  }
+
+  // ==== item 6: opt-in auto-save — press Save Preset ourselves ====
+  //
+  // CLAUDE.md rule 4: "never act on the live account — the player presses
+  // the button." This function is the one place in the whole module that
+  // would violate that if it fired wrong, so it is OFF by default
+  // (moduleSettings.autoSavePreset, set only from the Settings tab) and
+  // every gate below is a REFUSAL rather than a best-effort: failing any one
+  // of them stops the click and falls back to the ordinary manual-save path
+  // exactly as if the setting were off, rather than clicking anyway and
+  // hoping the rest was fine.
+  //
+  // THE GATES, AND WHY EACH ONE EXISTS:
+  //  1. Every slider already verified on target. Enforced by the CALLER —
+  //     this is only ever reached from loadProfileFlow's branch where
+  //     `mismatches.length === 0` — restated here as a comment (not a
+  //     redundant re-check) so this function's contract still reads
+  //     correctly in isolation, per the task's own "at minimum" requirement.
+  //  2. The budget line must be freshly READABLE, not merely readable
+  //     earlier in this run. Everything before this point ran seconds ago;
+  //     a live account's gold is exactly the kind of thing that can move
+  //     underneath a multi-second fill loop (another tab spending it, a
+  //     passive-income tick). This refuses rather than falling back to the
+  //     STALE liveBudgetB captured at the start of the run — CLAUDE.md rule
+  //     3, absent rather than defaulted.
+  //  3. What the GAME now says is allocated must not exceed what the GAME
+  //     now says is available (with a tiny epsilon — both numbers come from
+  //     TEXT the game already rounded for display, e.g. "236.49b", so the
+  //     last significant digit is display noise, not a real overspend).
+  //     Deliberately the game's own two numbers compared to EACH OTHER, not
+  //     our computed target compared to our computed budget — our
+  //     arithmetic could be internally consistent and still disagree with
+  //     what the page actually reflects, and this is the one check that
+  //     does not trust our own math to catch that.
+  //  4. The 6 formation slots must still be on screen. An SPA navigation
+  //     between finishing verification and this call (the user clicking
+  //     away, a route change mid-flow) would otherwise mean "click whatever
+  //     is now at these coordinates" — the same class of risk the geometry
+  //     heuristic in getClassButtons already has to guard against.
+  //
+  // Any refusal is SAID (DESIGN.md §5 — a refusal is a result, and it is
+  // shown), then falls through to the manual watch, so turning this setting
+  // on can never make the outcome WORSE than leaving it off.
+  const AUTO_SAVE_OVERSPEND_EPSILON = 1.0005;
+  async function attemptAutoSave() {
+    const budgetInfo = getAllocatedAndBudget();
+    if (!budgetInfo) {
+      say('refused', 'Auto-save is on, but the preset budget line could not be re-read just now — press Save Preset yourself.');
+      return false;
+    }
+    if (budgetInfo.allocated > budgetInfo.budget * AUTO_SAVE_OVERSPEND_EPSILON) {
+      say('refused', `Auto-save is on, but the page shows ${Core.formatNumber(budgetInfo.allocated)} allocated `
+        + `against a ${Core.formatNumber(budgetInfo.budget)} budget — refusing to click Save rather than trust `
+        + `that. Check the page before saving.`);
+      return false;
+    }
+    if (getClassButtons().length !== 6) {
+      say('refused', 'Auto-save is on, but the 6 fighter slots are no longer on screen — press Save Preset yourself.');
+      return false;
+    }
+    const saveBtn = findSavePresetButton();
+    if (!saveBtn) {
+      say('refused', 'Auto-save is on, but the Save Preset button could not be found — press Save Preset yourself.');
+      return false;
+    }
+    saveBtn.click();
+    setStatus('Save Preset clicked — watching for the game\'s confirmation…', 'info');
+    const sawSaveToast = await watchForSaveConfirmation(SAVE_CONFIRMATION_WATCH_MS);
+    setStatus(sawSaveToast
+      ? '✓ Saved automatically — the game confirmed it.'
+      : `Save Preset was clicked, but no in-game confirmation was seen within ${SAVE_CONFIRMATION_WATCH_MS / 1000}s `
+        + `— check the page. The sliders were verified correct before saving.`,
+    sawSaveToast ? 'success' : 'info');
+    return true;
+  }
+
   // REWORKED: was a flat form (boss level / crit chance / gold-per-fighter,
   // all typed in by hand, one "Generate" button) sitting inline in the main
   // panel. Reported as confusing ("Gold/fighter still doesn't make sense to
@@ -1307,12 +1507,72 @@
     return m ? parseInt(m[1], 10) : null;
   }
 
-  // REPORTED BUG: the level was only ever read once, at panel-build time —
-  // navigating TO the archive page afterwards did nothing. UNVERIFIED against
-  // the real page — the archive route path and the "Fighter World Boss Level N"
-  // wording it matches on are both taken from earlier session notes, not
-  // re-confirmed live.
-  let lastKnownBossLevel = null;
+  // ==== boss-level memory: persisted across sessions, with an HONEST prediction ====
+  //
+  // Was `let lastKnownBossLevel = null` — in-memory only, so every browser
+  // restart threw away the one number the World Boss optimizer window most
+  // wants pre-filled, and a returning user had to go re-read it in-game
+  // before this module could tell them anything useful. Now stored in this
+  // module's own STORAGE_KEY blob alongside `profiles` (flushStore, above).
+  //
+  // TWO FIELDS, not one, because they answer two different questions:
+  //   - `lastKnown` (one value + timestamp) is "the last thing this module
+  //     actually read". Updated on EVERY successful read, changed or not —
+  //     it is what "last seen 2d ago" reports, and what pre-fills the input.
+  //   - `log` (a short history) is "when did the number actually MOVE".
+  //     Updated ONLY when the level differs from the last logged entry —
+  //     logging every unchanged re-visit would flood it with zero-growth
+  //     rows and bias a naive rate estimate toward "no growth" the longer a
+  //     session happens to sit open on the archive page.
+  function recordBossLevelObservation(level) {
+    if (!Number.isFinite(level) || level <= 0) return;
+    const now = Date.now();
+    bossLevelMemory.lastKnown = { level, atMs: now };
+    const log = bossLevelMemory.log || [];
+    if (!log.length || log[log.length - 1].level !== level) {
+      log.push({ level, atMs: now });
+      // Bounded, not for storage's sake, but because a months-old entry
+      // would pull a "recent rate" estimate toward a cadence the account may
+      // not still have — see predictBossLevelFromLog below.
+      while (log.length > 12) log.shift();
+    }
+    bossLevelMemory.log = log;
+    markDirty();
+  }
+
+  // PURE, deliberately: given a log and a "now", returns a predicted current
+  // level or null — never reads Date.now() itself, so it is directly
+  // testable without mocking the clock (userscripts/tests/lib/dom-stub.mjs
+  // has no fake timer). predictBossLevel() below is the one real caller.
+  //
+  // THE PREDICTION IS DELIBERATELY THIN. The only data this project actually
+  // has is two or more real observations of a rising number over real time —
+  // nothing is known about the game's own boss-progression cadence (weekly
+  // reset? per-guild-action? uncapped?), so anything fancier than "the
+  // average rate THIS ACCOUNT has actually shown" would be a growth model
+  // dressed up as a measurement. CLAUDE.md rule 3: refuse rather than guess.
+  // With fewer than two DISTINCT levels logged there is nothing to divide,
+  // so this returns null rather than defaulting to some assumed cadence —
+  // the task's own instruction, restated as code: "if you cannot justify a
+  // prediction from the data actually available, say so and just restore
+  // the last value."
+  function predictBossLevelFromLog(log, nowMs) {
+    if (!Array.isArray(log) || log.length < 2) return null;
+    const first = log[0], last = log[log.length - 1];
+    const dLevel = last.level - first.level;
+    const dMs = last.atMs - first.atMs;
+    if (!(dLevel > 0) || !(dMs > 0)) return null; // flat or reversed — nothing to extrapolate
+    const ratePerMs = dLevel / dMs;
+    const predicted = Math.round(last.level + ratePerMs * (nowMs - last.atMs));
+    // Never predicts BELOW the last real observation — a boss level does not
+    // go down, so a non-positive-looking result here only means nowMs is at
+    // or before the last observation, not a real prediction worth offering.
+    return predicted > last.level ? { level: predicted, ratePerDay: ratePerMs * 86400000 } : null;
+  }
+  function predictBossLevel() {
+    return predictBossLevelFromLog(bossLevelMemory.log, Date.now());
+  }
+
   // OBSERVABLE, WHICH IT HAS NEVER BEEN. Both the route string and the
   // "Fighter World Boss Level N" wording come from session notes and have
   // never been confirmed against the real page — and this function used to
@@ -1330,8 +1590,9 @@
     const onRoute = path.includes('/world-boss/archive');
     const level = onRoute ? readLatestFighterWorldBossLevel() : null;
     if (level) {
-      lastKnownBossLevel = level;
+      recordBossLevelObservation(level);
       if (ui.optLevelInput && !ui.optLevelInput.value) ui.optLevelInput.value = String(level);
+      renderBossLevelContext(); // no-op if the optimizer window was never built
       if (archiveMissSaidFor !== null) archiveMissSaidFor = null;
       say('done', `World Boss level ${level} picked up from the archive page.`);
       return;
@@ -1670,25 +1931,43 @@
     if (!optimizerHandle) {
       optimizerHandle = Core.createWindow({
         id: 'fighter-allocator-optimizer', title: 'Optimize for World Boss',
-        resizable: false, alwaysOnTop: true, minSize: { w: 420, h: 440 }, persistGeometry: false,
+        // RESIZED 2026-09-08 — reported: pressing Start reveals more reasoning
+        // log than the old fixed 420x440 box could show, forcing a scroll
+        // mid-run. 'both' (was `false`) plus a taller floor so a full
+        // 6-fighter scan+plan fits without scrolling at the default size —
+        // see buildOptimizerContent()'s log element for the other half of
+        // this (max-height removed, flex:1 instead, so it keeps growing with
+        // whatever size the user drags this to).
+        resizable: 'both', alwaysOnTop: true, minSize: { w: 480, h: 560 }, persistGeometry: false,
       });
       optimizerHandle.setContent(buildOptimizerContent());
     }
     refreshLiveReads();
     renderOptimizerBudgetLine();
     if (ui.optLevelInput && !ui.optLevelInput.value) {
-      const level = lastKnownBossLevel || readLatestFighterWorldBossLevel();
+      // Prefer a fresh live read over persisted memory — if we happen to
+      // already be sitting on the archive page, that number needs no "how
+      // stale" caveat. Either way it becomes a real observation.
+      const live = readLatestFighterWorldBossLevel();
+      if (live) recordBossLevelObservation(live);
+      const level = live || (bossLevelMemory.lastKnown && bossLevelMemory.lastKnown.level);
       if (level) ui.optLevelInput.value = String(level);
     }
+    renderBossLevelContext();
     optimizerHandle.open();
   }
 
   function buildOptimizerContent() {
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
+    // flex:1 + min-height:0: this is the ONLY child of the window's own
+    // flex-column body (.apoz-window-body, core.js), so giving it flex:1
+    // lets it actually EXPAND to fill the window instead of sizing to its
+    // own content — which is what lets the log below grow with the window
+    // rather than being capped (item 2: the window is resizable now).
+    wrap.style.cssText = 'display:flex; flex-direction:column; gap:var(--apoz-s4); flex:1; min-height:0;';
 
     const intro = document.createElement('div');
-    intro.style.cssText = 'font-size:11px; opacity:.8; line-height:1.4;';
+    intro.style.cssText = 'font-size:var(--apoz-fs-control); opacity:var(--apoz-em-normal); line-height:1.4;';
     intro.textContent = 'Opens each fighter in turn to read their equipped Crit Chance, then computes '
       + 'the exact Hit target for this boss level and the optimal Damage/Crit Damage split with '
       + 'whatever gold remains — automatic, split evenly across your 6 fighters. Needs the Fighters '
@@ -1706,15 +1985,31 @@
     wrap.appendChild(levelRow);
     ui.optLevelInput = levelRow._input;
 
+    // Item 1: where the pre-filled level came from, and — only when there is
+    // real history to justify one — a clearly separate SUGGESTION next to it,
+    // never applied to the field automatically. See recordBossLevelObservation/
+    // predictBossLevelFromLog above for why this refuses more often than not.
+    const levelContext = document.createElement('div');
+    levelContext.style.cssText = 'font-size:var(--apoz-fs-caption); opacity:var(--apoz-em-muted); '
+      + 'display:flex; align-items:center; gap:var(--apoz-s3); flex-wrap:wrap;';
+    wrap.appendChild(levelContext);
+    ui.optLevelContext = levelContext;
+
     const budgetLine = document.createElement('div');
-    budgetLine.style.cssText = 'font-size:11px; opacity:.8;';
+    budgetLine.style.cssText = 'font-size:var(--apoz-fs-control); opacity:var(--apoz-em-normal);';
     wrap.appendChild(budgetLine);
     ui.optBudgetLine = budgetLine;
 
+    // THE MAX-HEIGHT WAS THE REAL CULPRIT (item 2): 190px capped this to
+    // under 8 lines no matter how much room the window actually had, so
+    // pressing Start on a real 6-fighter run always overflowed it. flex:1
+    // lets the log claim whatever space the window (now resizable) isn't
+    // using for the fixed rows around it; min-height is only the floor for a
+    // freshly-opened, un-resized window.
     const log = document.createElement('div');
-    log.style.cssText = 'font-size:11px; border:1px solid var(--apoz-border, var(--border)); '
-      + 'border-radius:5px; padding:6px 8px; min-height:130px; max-height:190px; overflow-y:auto; '
-      + 'background: var(--apoz-input, var(--input)); white-space:pre-wrap;';
+    log.style.cssText = 'font-size:var(--apoz-fs-control); border:1px solid var(--apoz-border, var(--border)); '
+      + 'border-radius:var(--apoz-r-md); padding:var(--apoz-s3) var(--apoz-s4); min-height:220px; flex:1; '
+      + 'overflow-y:auto; background: var(--apoz-input, var(--input)); white-space:pre-wrap;';
     log.textContent = 'Ready.';
     wrap.appendChild(log);
     ui.optLog = log;
@@ -1788,6 +2083,54 @@
     ui.optBudgetLine.textContent = liveBudgetB
       ? `Usable preset gold: ${Core.formatNumber(liveBudgetB)} (${Core.formatNumber(liveBudgetB / 6)} / fighter, split evenly)`
       : 'Usable preset gold: not read — open the Fighters page first.';
+  }
+
+  // "2d ago" / "5h ago" / "just now" — coarse on purpose, matching the
+  // activity strip's own agoText() one level up: nobody needs second-level
+  // precision for "when did I last see this".
+  function formatRelativeAgo(ms) {
+    if (!(ms >= 0)) return 'just now';
+    const mins = ms / 60000;
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${Math.round(mins)}m ago`;
+    const hours = mins / 60;
+    if (hours < 48) return `${Math.round(hours)}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+  }
+
+  // Renders "last seen"/"predicted" beside the Boss level field. Never
+  // touches ui.optLevelInput.value itself — the prediction is offered via
+  // its own button (below), which the user has to press. That is what makes
+  // it a suggestion and not a silent guess (item 1's explicit requirement).
+  function renderBossLevelContext() {
+    const el = ui.optLevelContext;
+    if (!el) return;
+    el.innerHTML = '';
+    const known = bossLevelMemory.lastKnown;
+    if (!known) {
+      el.textContent = 'No boss level remembered yet — visit the World Boss Archive page once, or enter it below.';
+      return;
+    }
+    const seen = document.createElement('span');
+    seen.textContent = `Last seen: level ${known.level}, ${formatRelativeAgo(Date.now() - known.atMs)}.`;
+    el.appendChild(seen);
+
+    const prediction = predictBossLevel();
+    if (!prediction) return; // not enough real history to justify one — say nothing rather than guess
+    const predSpan = document.createElement('span');
+    predSpan.textContent = `Predicted now: ~${prediction.level} `
+      + `(from your own history, ~${prediction.ratePerDay.toFixed(1)}/day) —`;
+    el.appendChild(predSpan);
+    const useBtn = document.createElement('button');
+    useBtn.type = 'button';
+    useBtn.className = 'apoz-ui-btn';
+    useBtn.textContent = `Use ${prediction.level}`;
+    useBtn.title = 'Fills the field with the predicted level — a suggestion from your own observed history, '
+      + 'never applied automatically.';
+    useBtn.addEventListener('click', () => {
+      if (ui.optLevelInput) ui.optLevelInput.value = String(prediction.level);
+    });
+    el.appendChild(useBtn);
   }
 
   function optLog(msg) {
@@ -2014,27 +2357,54 @@
     return btn;
   }
 
-  // ONE entry point for both directions and both formats, per-profile when
-  // opened from a table row (Export enabled) or general when opened from
-  // the toolbar (Export disabled — nothing to export yet, Import creates a
-  // new plan). Always-on-top: it's a small dialog meant to sit over the
-  // main window, not compete with it for focus/z-order.
+  // ONE entry point for importing a plan, either creating a new one (from
+  // the toolbar, `profile` null) or aimed at an existing one (from a row's
+  // share menu's "Import over this plan…", `profile` set — see the NOTE
+  // inside promptAndImport below about what that scoping does and doesn't do
+  // yet). Always-on-top: a small dialog meant to sit over the main window,
+  // not compete with it for focus/z-order.
+  //
+  // ITEM 7 — USED TO ALSO OFFER EXPORT HERE, gated behind `profile` (enabled
+  // when opened from a row, permanently DISABLED with a title="…" when
+  // opened from the toolbar). INVESTIGATED rather than patched blind, after
+  // being reported as "the Export buttons appear to do nothing":
+  //
+  //   They were not silently broken — when reachable (profile set) they DID
+  //   copy to the clipboard / fall back to a native prompt(), the same
+  //   feedback every other export path in this module gives.
+  //
+  //   The real problem: this modal's OWN surrounding comment already said
+  //   export moved to the per-row share menu ("this is ONLY for bringing a
+  //   new plan in, hence 'Import' not 'Import/Export'"), and the toolbar
+  //   button's label agrees — but this modal was never updated to match, so
+  //   it kept a permanently-disabled pair of buttons in the one place most
+  //   people actually reach it (the toolbar, where profile is null — "does
+  //   nothing" is a fair read of two greyed-out buttons whose only
+  //   explanation was a native title tooltip, not this file's own styled
+  //   data-tooltip convention), and a working-but-REDUNDANT pair in the one
+  //   place they weren't disabled (a row's share menu, which already has its
+  //   own direct "Export — Apoz format" / "Export — community format" items
+  //   ONE CLICK before this modal even opens — see buildShareButton above).
+  //
+  //   Removed rather than wired up: there was nothing broken to fix, the
+  //   working copy was simply pointless. Multi-profile export stays out of
+  //   scope, per the standing note above exportFriendFormat.
   let importExportHandle = null;
   function openImportExportModal(profile) {
     if (!importExportHandle) {
       importExportHandle = Core.createWindow({
         id: 'fighter-allocator-import-export',
-        title: 'Import / Export',
+        title: 'Import a Plan',
         resizable: false,
         alwaysOnTop: true,
-        minSize: { w: 380, h: 300 },
+        minSize: { w: 380, h: 260 },
         persistGeometry: false,
       });
     }
     const body = document.createElement('div');
     body.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
 
-    function section(label, formatBadge, doImport, doExport, exportDisabledReason) {
+    function section(label, formatBadge, doImport) {
       const box = document.createElement('div');
       box.className = 'apoz-fa-group';
       const head = document.createElement('div');
@@ -2052,22 +2422,23 @@
       importBtn.textContent = 'Import…';
       importBtn.addEventListener('click', doImport);
       row.appendChild(importBtn);
-      const exportBtn = document.createElement('button');
-      exportBtn.type = 'button'; exportBtn.className = 'apoz-ui-btn';
-      exportBtn.textContent = 'Export';
-      if (exportDisabledReason) { exportBtn.disabled = true; exportBtn.title = exportDisabledReason; }
-      else exportBtn.addEventListener('click', doExport);
-      row.appendChild(exportBtn);
       box.appendChild(row);
       return box;
     }
 
-    const exportDisabled = profile ? null : 'Open this from a row in the table to export that plan.';
     const promptAndImport = (parse, label) => () => {
       const raw = prompt(`Paste ${label} JSON:`);
       if (!raw) return;
       try {
         const imported = parse(JSON.parse(raw));
+        // FOUND IN PASSING while removing this modal's dead Export buttons,
+        // out of scope for this pass: when `profile` is set (opened via
+        // "Import over this plan…"), this still creates a brand-new plan via
+        // upsertProfile rather than overwriting `profile` — makeProfile
+        // always mints a fresh id and nothing here ever reads `profile.id`.
+        // The "Scoped to" label below is currently aspirational, not
+        // enforced. Flagged rather than silently left for the next person to
+        // rediscover.
         upsertProfile(imported);
         rerenderProfiles();
         Core.toast(`Imported "${imported.name}".`, { type: 'success' });
@@ -2080,14 +2451,10 @@
     body.appendChild(section(
       'Fighter Optimizer', '(community script format)',
       promptAndImport((raw) => detectAndNormalizeImport(raw, 'Imported plan'), 'a Fighter Optimizer gold-plan export'),
-      () => copyOrPrompt(() => exportFriendFormat(profile)),
-      exportDisabled,
     ));
     body.appendChild(section(
       'Apoz Fighter Allocator', '(this tool\'s own format)',
       promptAndImport((raw) => detectAndNormalizeImport(raw, 'Imported plan'), 'a plan exported from this tool'),
-      () => copyOrPrompt(() => exportNative(profile)),
-      exportDisabled,
     ));
 
     if (profile) {
@@ -2099,6 +2466,28 @@
 
     importExportHandle.setContent(body);
     importExportHandle.open();
+  }
+
+  // A labelled checkbox for the Settings pane (item 5/6). core.js has its
+  // own Core_ui_toggleRow with this exact shape, but it is deliberately NOT
+  // exposed on Core.ui (FRAMEWORK.md: nine builders, not a component
+  // library) — this mirrors it rather than inventing a different-looking
+  // checkbox, so the Settings tab reads as one system.
+  function buildToggleRow({ label, info, checked, onChange }) {
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex; align-items:center; gap:var(--apoz-s3); '
+      + 'font-size:var(--apoz-fs-control); cursor:pointer; margin:var(--apoz-s2) 0;';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!checked;
+    input.style.cssText = 'width:13px; height:13px; accent-color: var(--apoz-primary); margin:0;';
+    input.addEventListener('change', () => onChange(input.checked));
+    const span = document.createElement('span');
+    span.textContent = label;
+    row.appendChild(input);
+    row.appendChild(span);
+    if (info && Core.ui && typeof Core.ui.infoIcon === 'function') row.appendChild(Core.ui.infoIcon(info));
+    return row;
   }
 
   function buildPanelContent() {
@@ -2134,7 +2523,11 @@
          ceiling. The resting height is why adding your first plan replaces a
          ghost row in place instead of resizing the panel. */
       .apoz-fa-table-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-      .apoz-fa-table-scroll { overflow: auto; min-height: 148px; max-height: 420px; flex: 1; }
+      /* min-height raised 148->220 alongside RESTING_ROWS 5->8 (item 3):
+         an empty table should read as deliberately spacious, not stubby. The
+         SCROLL CEILING (max-height) is untouched on purpose — this only
+         changes the floor. */
+      .apoz-fa-table-scroll { overflow: auto; min-height: 220px; max-height: 420px; flex: 1; }
       .apoz-fa-ghost td { height: 22px; color: transparent; }
       .apoz-fa-ghost td::after { content: ""; display: block; height: var(--apoz-s4);
         border-radius: 3px; background: color-mix(in srgb, var(--apoz-border, var(--border)) 40%, transparent); }
@@ -2143,6 +2536,14 @@
       .apoz-fa-hint { text-align: center; font-size: var(--apoz-fs-caption);
         opacity: var(--apoz-em-muted); padding: var(--apoz-s4) var(--apoz-s2) var(--apoz-s1);
         line-height: 1.5; }
+      /* THE ARCHIVED-PLANS DIVIDER (item 4) — one thin rule, label sitting ON
+         it via ::before/::after either side, instead of a rule plus a
+         separate caption line underneath (the "too fragmented" report). */
+      .apoz-fa-divider { display: flex; align-items: center; gap: var(--apoz-s3);
+        margin: var(--apoz-s5) 0 var(--apoz-s3); font-size: var(--apoz-fs-micro);
+        text-transform: uppercase; letter-spacing: .05em; opacity: var(--apoz-em-muted); }
+      .apoz-fa-divider::before, .apoz-fa-divider::after { content: ""; flex: 1; height: 1px;
+        background: var(--apoz-border, var(--border)); }
     `;
     document.head.appendChild(style);
 
@@ -2309,7 +2710,12 @@
       // Delete/share-icon) so a user drag is a legitimate way to get more
       // room now too. Capped at the viewport size either way (applyMaxSize).
       resizable: 'both',
-      minSize: { w: 640, h: 640 },
+      // h bumped 640->680: RESTING_ROWS/table-scroll min-height both grew
+      // (item 3, "table should be longer by default even when empty") — this
+      // keeps the taller resting table visible without the window body's own
+      // overflow:auto kicking in on a freshly-opened, un-resized window.
+      minSize: { w: 640, h: 680 },
+      settingsTab: MODULE_ID, // gear button in the header -> this module's Settings pane, registered below
       content,
       onClose: () => togglePanel(false),
     });
@@ -2319,8 +2725,67 @@
       label: 'Fighter Allocator',
       shortLabel: 'Fighters',
       description: 'Allocate gold-purchased fighter stats — class-keyed profiles, World Boss math, '
-        + 'two-way Fighter Optimizer import/export. Fills sliders; never auto-clicks Save Preset.',
+        + 'two-way Fighter Optimizer import/export. Fills and verifies sliders; only clicks Save Preset '
+        + 'itself if you opt in from Settings.',
       needsCore: 8, // uses Core.ui.menu (v7) and Core.walkFiberAll (v8)
+      // Own pane in Core's shared Settings window (v11: registerModule({settings})
+      // + createWindow({settingsTab}), above). Rendered lazily by Core, once,
+      // the first time the tab is opened. Degrades cleanly on an older Core —
+      // an unknown `settings`/`settingsTab` field is simply ignored, so this
+      // module works identically either way, just without the gear button;
+      // no needsCore bump for that reason alone (FRAMEWORK.md §5: degrade,
+      // never disappear).
+      settings: {
+        label: 'Fighter Allocator',
+        render(container) {
+          const speedHead = document.createElement('div');
+          speedHead.className = 'apoz-settings-cat';
+          speedHead.textContent = 'Allocation speed';
+          container.appendChild(speedHead);
+
+          const speedRow = Core.ui.inputRow({
+            label: 'Fill pace', type: 'select',
+            options: [
+              { value: 'fast', label: 'Fast (default)' },
+              { value: 'slow', label: 'Slower — original pacing' },
+            ],
+            value: moduleSettings.allocatePace,
+            info: 'How long Allocate waits between clicking a fighter, writing each slider, and moving to '
+              + 'the next one. Every value is re-read and compared against its target afterward regardless '
+              + 'of pace (see the status line once Allocate finishes), so a faster pace that races ahead of '
+              + 'a slow page is CAUGHT, not silently trusted. Try Slower only if you actually see mismatches '
+              + 'reported.',
+            onChange: (v) => setModuleSetting('allocatePace', v === 'slow' ? 'slow' : 'fast'),
+          });
+          container.appendChild(speedRow);
+
+          const saveHead = document.createElement('div');
+          saveHead.className = 'apoz-settings-cat';
+          saveHead.textContent = 'Save Preset';
+          container.appendChild(saveHead);
+
+          const warn = document.createElement('div');
+          warn.style.cssText = 'font-size:var(--apoz-fs-control); opacity:var(--apoz-em-normal); line-height:1.45;';
+          warn.textContent = 'OFF by default. Allocate always fills and verifies your sliders on the page; '
+            + 'it never touches the Save button unless this is turned on. When it IS on, Allocate still '
+            + 'refuses to click Save if any slider fails verification, or if the page\'s own budget line '
+            + 'cannot be freshly re-read — see the info icon below for the exact gates.';
+          container.appendChild(warn);
+
+          const autoSaveRow = buildToggleRow({
+            label: 'Let Allocate press Save Preset for me',
+            info: 'Gated: every slider must independently verify against its target AND the preset\'s total '
+              + 'spend, read fresh right before clicking, must not exceed the budget the game itself shows as '
+              + 'available. Either failing refuses to click Save and says why in the activity strip — same as '
+              + 'leaving this off. This never runs on its own; it only fires at the end of an Allocate you '
+              + 'started yourself. CLAUDE.md rule 4: "never act on the live account — the player presses the '
+              + 'button" — this exists to be the one deliberate, documented exception, not a loophole.',
+            checked: !!moduleSettings.autoSavePreset,
+            onChange: (v) => setModuleSetting('autoSavePreset', v),
+          });
+          container.appendChild(autoSaveRow);
+        },
+      },
       // Enabling always shows the window right away, matching eta-tracker.
       // Nothing to gate on reload here yet — this module doesn't persist
       // panelOpen the way eta-tracker does, so there's no prior-session
@@ -2338,6 +2803,13 @@
         scanEquippedStatsViaFiber, readStatTotalFromCard, gearFromDisplayedTotal, equipmentTierMultiplier,
         statFinalFromRaw, rawPointsForFinalStat, scaleLevel,
         goldCostForPoints, maxLevelForBudget, splitDamageCritDamageByGold, allocateFighterForWorldBoss,
+        // ---- item 1: boss-level memory ----
+        STORAGE_KEY, flushStore, loadStore,
+        bossLevelMemory: () => bossLevelMemory,
+        recordBossLevelObservation, predictBossLevel, predictBossLevelFromLog,
+        // ---- item 5/6: pacing + module settings + the auto-save gate ----
+        moduleSettings: () => moduleSettings, setModuleSetting, allocatePacing,
+        getAllocatedAndBudget, findSavePresetButton, attemptAutoSave,
       },
     });
 

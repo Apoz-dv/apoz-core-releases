@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.10.0
+// @version      6.11.0
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.10.0",
+    "version": "6.11.0",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -115,7 +115,22 @@
       // openSettingsWindow) for anyone who would rather every window just
       // kept its default/reset size than risk dragging one into an odd shape.
       windowResizingEnabled: true,
+      // Settings stays non-resizable — its panes are laid out for a known
+      // width, and a freely-dragged settings panel is one more thing to get
+      // wrong. But "one fixed size" turned out to be genuinely restrictive, so
+      // the compromise is four named sizes rather than a drag handle: the
+      // window is still always in a shape that was designed, and you pick
+      // which. Falls back to 'default' for any unknown value, so a hand-edited
+      // or future key cannot produce a 0x0 panel.
+      settingsSize: 'default',
     };
+    const SETTINGS_SIZES = {
+      compact: { w: 520, h: 460, label: 'Compact' },
+      default: { w: 580, h: 560, label: 'Default' },
+      large: { w: 720, h: 660, label: 'Large' },
+      tall: { w: 620, h: 820, label: 'Tall' },
+    };
+    const settingsSize = () => SETTINGS_SIZES[getSetting('settingsSize')] || SETTINGS_SIZES.default;
     let settings = Object.assign({}, SETTINGS_DEFAULTS);
     try {
       const rawSettings = localStorage.getItem(SETTINGS_KEY);
@@ -344,6 +359,90 @@
     // overflow the right edge, and flip upward if it would overflow the
     // bottom. A final clampRectToViewport is a safety net for a viewport
     // smaller than the menu itself, not the primary mechanism.
+    // ---- the tooltip singleton (v11) ----
+    //
+    // ONE element, on <body>, reused by every [data-tooltip] on the page. See
+    // the .apoz-ui-tip CSS for why this stopped being a ::after — in short, a
+    // pseudo-element inherits its ancestors' opacity and contributes to their
+    // scroll area, and both of those were shipping as bugs.
+    //
+    // Delegated from document rather than one listener per tooltipped element:
+    // there are dozens, they are created and destroyed constantly as panels
+    // re-render, and per-element listeners are exactly the leak shape
+    // INSTRUMENTATION §4.4 exists to stop. Two listeners, page-lifetime, owned
+    // by coreScope.
+    let tipEl = null;
+    let tipAnchor = null;
+
+    function hideTip() {
+      if (tipEl) tipEl.hidden = true;
+      tipAnchor = null;
+    }
+
+    function showTip(target) {
+      const text = target.getAttribute('data-tooltip');
+      if (!text) return;
+      if (!tipEl) {
+        tipEl = document.createElement('div');
+        tipEl.className = 'apoz-ui-tip';
+        tipEl.hidden = true;
+        document.body.appendChild(tipEl);
+      }
+      tipAnchor = target;
+      tipEl.textContent = text;
+      // data-tooltip-wide is the only width control left. data-tooltip-right
+      // is now a NO-OP and deliberately still accepted: it used to force the
+      // bubble to the element's right edge, which is precisely the guess the
+      // positioner makes properly. Callers keep the attribute harmlessly
+      // rather than every call site needing an edit.
+      tipEl.style.width = target.hasAttribute('data-tooltip-wide') ? '230px' : '200px';
+      tipEl.hidden = false;
+      // Measured AFTER the text and width are set, because the height depends
+      // on both — positioning against a stale size is how a flipped tooltip
+      // ends up half off the bottom.
+      const rect = positionDropdownNearAnchor(
+        target.getBoundingClientRect(),
+        { w: tipEl.offsetWidth, h: tipEl.offsetHeight },
+        viewportRect(), 8);
+      tipEl.style.left = rect.x + 'px';
+      tipEl.style.top = rect.y + 'px';
+    }
+
+    function installTooltips(scope) {
+      // core-ui-geometry.mjs loads this file purely to exercise the pure
+      // geometry helpers, with no DOM at all. Anything at module scope that
+      // assumes a document breaks that test — and a Core that cannot be
+      // loaded without a browser is a Core whose maths cannot be unit-tested.
+      if (typeof document === 'undefined' || typeof window === 'undefined') return;
+      // pointerover/out rather than mouseenter/leave: those do not bubble, so
+      // delegation needs the ones that do. `relatedTarget` tells us whether
+      // the pointer actually left the anchor or merely crossed onto a child.
+      scope.on(document, 'pointerover', (e) => {
+        const t = e.target && e.target.closest && e.target.closest('[data-tooltip]');
+        if (!t) { if (tipAnchor) hideTip(); return; }
+        if (t !== tipAnchor) showTip(t);
+      });
+      scope.on(document, 'pointerout', (e) => {
+        if (!tipAnchor) return;
+        const to = e.relatedTarget;
+        if (to && tipAnchor.contains && tipAnchor.contains(to)) return;
+        hideTip();
+      });
+      // A tooltip positioned against a rect that has since moved is worse than
+      // no tooltip: it points at nothing. Anything that can move the anchor
+      // dismisses instead of trying to follow it.
+      scope.on(document, 'scroll', hideTip, true);
+      scope.on(window, 'resize', hideTip);
+      scope.on(window, 'blur', hideTip);
+      // Keyboard parity, now that focus is visible at all: a tooltip reachable
+      // only by pointer is one a keyboard user cannot read.
+      scope.on(document, 'focusin', (e) => {
+        const t = e.target && e.target.closest && e.target.closest('[data-tooltip]');
+        if (t) showTip(t);
+      });
+      scope.on(document, 'focusout', hideTip);
+    }
+
     function positionDropdownNearAnchor(anchorRect, size, viewport, margin) {
       margin = margin == null ? 8 : margin;
       let x = anchorRect.left;
@@ -526,6 +625,12 @@
     // and it needs exactly one (the nav anchor watcher), so taking more would
     // be unearned slack in the one place it would be least noticed.
     const coreScope = createScope('core', { maxObservers: 1 });
+
+    // Installed here rather than in buildUi(): tooltips belong to any element
+    // carrying the attribute, including ones a module renders before the nav
+    // menu has been anchored. The listeners are delegated from document, so
+    // attaching them early costs nothing and there is no window to wait for.
+    installTooltips(coreScope);
 
     // ================================================================
     // ---- THE WRITE SCHEDULER — the framework's performance half ----
@@ -1049,17 +1154,31 @@
       const style = document.createElement('style');
       style.id = 'apoz-window-style';
       style.textContent = `
+        /* SEPARATION FROM THE HOST PAGE, spent in three small places rather
+           than one loud one. The overlay styles itself from the game's own
+           palette on purpose — that is what makes it feel native — and the
+           cost of that choice is windows that dissolve into the page behind
+           them. Reported as "blends in a bit too much".
+           The fix is deliberately NOT a different colour scheme, which would
+           throw away the reason the theme exists. It is: a 2px accent rule
+           along the top edge of the header (an overlay signature, and the one
+           place a strong colour costs nothing because no content sits there),
+           a slightly stronger outer ring, and a header title one type step up.
+           Everything else is untouched. */
         .apoz-window { position: fixed; z-index: 999000; display: flex; flex-direction: column;
           background: var(--apoz-card); color: var(--apoz-popover-foreground); border: 1px solid var(--apoz-border);
-          border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.04);
+          border-radius: 8px;
+          box-shadow: 0 12px 32px rgba(0,0,0,.45), 0 0 0 1px color-mix(in srgb, var(--apoz-primary) 22%, transparent);
           font: 12px ${CORE_FONT}; overflow: hidden; }
         .apoz-window[hidden] { display: none; }
         .apoz-window[data-resizable="true"] { resize: both; min-width: 260px; min-height: 160px; }
         .apoz-window-header { display: flex; align-items: center; gap: 6px; padding: 7px 9px;
-          background: color-mix(in srgb, var(--apoz-card) 88%, #000); border-bottom: 1px solid var(--apoz-border);
+          background: color-mix(in srgb, var(--apoz-card) 88%, #000);
+          border-bottom: 1px solid var(--apoz-border);
+          border-top: 2px solid var(--apoz-primary);
           cursor: move; user-select: none; flex: none; }
-        .apoz-window-title { font-weight: 600; font-size: 12px; flex: 1; overflow: hidden;
-          text-overflow: ellipsis; white-space: nowrap; }
+        .apoz-window-title { font-weight: 700; font-size: var(--apoz-fs-title); flex: 1;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -.01em; }
         .apoz-window-close { background: none; border: none; color: inherit;
           opacity: var(--apoz-em-muted); cursor: pointer;
           font-size: 16px; line-height: 1; padding: 0 3px; }
@@ -1124,8 +1243,17 @@
         .apoz-settings-side { flex: none; width: 112px; padding: var(--apoz-s3);
           border-right: 1px solid var(--apoz-border); display: flex; flex-direction: column;
           gap: var(--apoz-s1); background: color-mix(in srgb, var(--apoz-card) 94%, #000); }
+        /* A CATEGORY LABEL, NOT A TAB. These sat at the same indent and nearly
+           the same size as the buttons below them, so "Core" and "Modules"
+           read as things to click. Now: wider letter-spacing, a hairline rule
+           under the label, no button padding, and real space above the second
+           group so the two lists separate. */
         .apoz-settings-side-h { font-size: var(--apoz-fs-micro); text-transform: uppercase;
-          letter-spacing: .05em; opacity: var(--apoz-em-faint); padding: var(--apoz-s3) 7px var(--apoz-s1); }
+          letter-spacing: .14em; opacity: var(--apoz-em-faint); font-weight: 700;
+          padding: 0 3px var(--apoz-s1); margin: var(--apoz-s5) 4px var(--apoz-s2);
+          border-bottom: 1px solid color-mix(in srgb, var(--apoz-border) 55%, transparent);
+          cursor: default; user-select: none; }
+        .apoz-settings-side-h:first-child { margin-top: var(--apoz-s1); }
         .apoz-settings-side-i { background: none; border: none; color: inherit; font: inherit;
           font-size: var(--apoz-fs-control); text-align: left; padding: var(--apoz-s2) 7px;
           border-radius: var(--apoz-r-sm); opacity: var(--apoz-em-muted); cursor: pointer;
@@ -1180,7 +1308,7 @@
           background: color-mix(in srgb, var(--apoz-card) 94%, #000); flex: none; }
         .apoz-ui-activity-head { display: flex; align-items: center; gap: 7px; width: 100%;
           padding: var(--apoz-s3) 11px; background: none; border: none; color: inherit;
-          font: inherit; font-size: var(--apoz-fs-control); text-align: left; cursor: pointer; }
+          font: inherit; font-size: var(--apoz-fs-body); text-align: left; cursor: pointer; }
         .apoz-ui-activity-head:hover { background: var(--apoz-input); }
         .apoz-ui-activity-g { flex: none; width: 11px; text-align: center; }
         .apoz-ui-activity-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
@@ -1190,7 +1318,7 @@
         .apoz-ui-activity-list { border-top: 1px solid var(--apoz-border);
           padding: var(--apoz-s1) 0; max-height: 132px; overflow-y: auto; }
         .apoz-ui-activity-row { display: flex; align-items: center; gap: 7px;
-          padding: 3px 11px; font-size: var(--apoz-fs-control); }
+          padding: 3px 11px; font-size: var(--apoz-fs-body); }
         .apoz-ui-lvl-done { color: var(--apoz-success); }
         .apoz-ui-lvl-busy { color: var(--apoz-primary); }
         .apoz-ui-lvl-refused { color: var(--apoz-warn); }
@@ -1380,8 +1508,12 @@
       document.body.appendChild(el);
 
       const persist = spec.persistGeometry !== false;
-      const minW = (spec.minSize && spec.minSize.w) || 360;
-      const minH = (spec.minSize && spec.minSize.h) || 240;
+      // `let`, not `const`: setMinSize() below changes these at runtime. The
+      // Settings window is the one caller — its size is a user setting, not a
+      // property of the window, and re-creating the window to change it would
+      // throw away its content and every listener on it.
+      let minW = (spec.minSize && spec.minSize.w) || 360;
+      let minH = (spec.minSize && spec.minSize.h) || 240;
 
       function computeDefaultRect() {
         if (spec.defaultRect && spec.defaultRect !== 'auto') return spec.defaultRect;
@@ -1516,6 +1648,16 @@
         // see resetFull() for the size-included version.
         resetPosition: resetPositionOnly,
         resetFull,
+        // Changes the floor a persisted rect is measured against. resetFull()
+        // is what actually re-lays the window out; this only moves the bar, so
+        // a caller that wants the new size applied now must call both — which
+        // is deliberate, because raising the floor on a window somebody has
+        // deliberately sized should not yank it out from under them.
+        setMinSize(size) {
+          if (!size) return;
+          if (Number.isFinite(size.w)) minW = size.w;
+          if (Number.isFinite(size.h)) minH = size.h;
+        },
       };
       // A module supplying onClose owns what "close" means (e.g. it may also
       // need to update its own open/closed state or persist something) — the
@@ -1975,26 +2117,38 @@
            capacity row did. */
         [hidden] { display: none !important; }
 
-        /* DISPLAY-TOGGLED, not opacity-faded, and the fade is deliberately the
-           thing traded away.
-           An absolutely-positioned tooltip still contributes to the SCROLL AREA
-           of its nearest scrolling ancestor even at opacity 0. The Settings
-           body scrolls, so every info icon was silently adding its own 200-230px
-           of horizontal scroll width — measured at 658px of content in a 445px
-           box, i.e. a settings panel that scrolled sideways for no visible
-           reason. Hiding by visibility does not fix it either: a
-           hidden-but-laid-out box still counts. display:none removes it from
-           layout entirely, which costs an 80ms fade-in and buys a panel that
-           does not look broken. */
-        [data-tooltip] { position: relative; }
-        [data-tooltip]::after { content: attr(data-tooltip); position: absolute;
-          top: 130%; left: 0; background: var(--apoz-solid-card); color: var(--apoz-solid-popover-foreground);
-          border: 1px solid var(--apoz-solid-border); border-radius: 4px; padding: 5px 7px; font-size: 10px;
-          line-height: 1.35; width: 200px; white-space: normal; pointer-events: none;
-          display: none; box-shadow: 0 4px 12px rgba(0,0,0,.5); z-index: 1002500; }
-        [data-tooltip][data-tooltip-wide]::after { width: 230px; }
-        [data-tooltip][data-tooltip-right]::after { left: auto; right: 0; }
-        [data-tooltip]:hover::after { display: block; }
+        /* ---- TOOLTIPS ARE A REAL ELEMENT NOW, NOT A ::after ----
+           This was a pseudo-element for three iterations and every reported
+           tooltip complaint traces to that one decision. A ::after cannot
+           escape its ancestors, and all four symptoms follow:
+
+           1. TRANSPARENT. "opacity" applies to an element's whole subtree,
+              pseudo-elements included. Every info icon is styled at
+              --apoz-em-muted and the disable-all button at --apoz-em-faint, so
+              their tooltips rendered at 55% and 40% however opaque the
+              background token was. THIS is why "transparent hover-overs" kept
+              coming back after the --apoz-solid-* fix: that fix addressed a
+              translucent theme COLOUR, and the cause was inherited opacity.
+           2. ALWAYS OPENS RIGHT. "left: 0" anchors to the element's left edge
+              and extends rightward; nothing could flip it.
+           3. GOES OFF-SCREEN. Nothing clamped it to the viewport.
+           4. FORCES A HORIZONTAL SCROLLBAR. An absolutely-positioned box
+              contributes to its scroll container's scroll width the moment it
+              becomes display:block, so hovering an icon in the Settings pane
+              widened the pane. The old comment here claimed display:none had
+              solved that -- it only moved it from always to on-hover.
+
+           A real element on <body>, positioned fixed, has no ancestor to
+           inherit from, contributes to no panel's scroll area, and can be
+           flipped and clamped by the same pure helper the dropdown and every
+           ui.menu already use. Same markup contract: any [data-tooltip]. */
+        .apoz-ui-tip { position: fixed; z-index: 1002500; box-sizing: border-box;
+          background: var(--apoz-solid-card); color: var(--apoz-solid-popover-foreground);
+          border: 1px solid var(--apoz-solid-border); border-radius: var(--apoz-r-sm);
+          padding: 5px 7px; font-size: var(--apoz-fs-caption); line-height: 1.35;
+          white-space: normal; pointer-events: none;
+          box-shadow: 0 4px 12px rgba(0,0,0,.5); font: var(--apoz-fs-caption) var(--apoz-font);
+          font-family: var(--apoz-font); }
         .apoz-core-separator { height: 1px; background: var(--apoz-border); margin: 6px 2px; }
         /* A GRID, NOT A FLEX ROW — the alignment contract (DESIGN.md §4)
            applies here too. With flex, every row sized its own name column, so
@@ -2377,6 +2531,7 @@
     // settings are coming (see the note in openSettingsWindow's body).
     let settingsHandle = null;
     let settingsUi = null;
+    let settingsMinW = 0, settingsMinH = 0;
     // ---- the jobs window (v11) ----
     //
     // The visualisation half of "the browser is the interface". Everything it
@@ -2502,10 +2657,20 @@
           // is sized to fit within this, and the body only scrolls once a
           // future tab genuinely overflows it.
           id: 'apoz-core-settings', title: 'Apoz Core Settings',
-          resizable: false, minSize: { w: 580, h: 560 },
+          resizable: false, minSize: { w: settingsSize().w, h: settingsSize().h },
         });
         settingsUi = buildSettingsContent();
         settingsHandle.setContent(settingsUi.root);
+      }
+      // Re-applied on every open, not only at creation: the size is a setting,
+      // and a setting you have to close and reopen the window twice to see is
+      // one people assume did not work. resetFull() re-floors the geometry
+      // against the new minSize rather than leaving the old rect in place.
+      const want = settingsSize();
+      if (settingsHandle && (settingsMinW !== want.w || settingsMinH !== want.h)) {
+        settingsMinW = want.w; settingsMinH = want.h;
+        settingsHandle.setMinSize({ w: want.w, h: want.h });
+        settingsHandle.resetFull();
       }
       settingsUi.renderNumberFormat();
       settingsUi.renderHostStatus();
@@ -2684,6 +2849,29 @@
       resizeRow.appendChild(resetSizesBtn);
       windowsGroup.appendChild(resizeRow);
 
+      // Previewable, so it applies live (DESIGN.md's save model): you pick a
+      // size and the window you are looking at becomes that size. A Save
+      // button in front of that would be asking you to confirm something you
+      // can already see.
+      const sizeRow = ui.inputRow({
+        label: 'Settings window size',
+        type: 'select',
+        value: getSetting('settingsSize'),
+        options: Object.keys(SETTINGS_SIZES).map((k) => ({
+          value: k, label: `${SETTINGS_SIZES[k].label} (${SETTINGS_SIZES[k].w}x${SETTINGS_SIZES[k].h})`,
+        })),
+        info: 'This window stays non-resizable — its panes are laid out for a known width — so instead of a '
+          + 'drag handle you pick from sizes that were designed. If one ever leaves the window awkward, '
+          + '"Reset window positions" in the menu puts it back to default.',
+        onChange: (v) => {
+          setSetting('settingsSize', v);
+          const want = settingsSize();
+          settingsMinW = want.w; settingsMinH = want.h;
+          if (settingsHandle) { settingsHandle.setMinSize(want); settingsHandle.resetFull(); }
+        },
+      });
+      windowsGroup.appendChild(sizeRow);
+
       const reloadRow = Core_ui_toggleRow({
         label: 'Reopen module windows automatically on page reload',
         info: 'OFF (default): a module always opens its window the moment you enable it, but a page '
@@ -2845,7 +3033,7 @@
       const HOST_COPY = {
         [HOST_STATES.UNKNOWN]: ['', 'Not checked yet — press Connect.'],
         [HOST_STATES.READY]: ['var(--apoz-success)', 'Connected.'],
-        [HOST_STATES.NO_HOST]: ['var(--apoz-warn)', 'Not running.'],
+        [HOST_STATES.NO_HOST]: ['var(--apoz-warn)', 'Not running — start it yourself; a userscript cannot.'],
         [HOST_STATES.UNAUTHORIZED]: ['var(--apoz-warn)', 'Token not accepted.'],
         [HOST_STATES.MISMATCH]: ['var(--apoz-danger)', 'Version mismatch — do not use.'],
       };
@@ -2862,6 +3050,40 @@
         detail.textContent = s.detail || '';
         hostStatusLine.appendChild(strong);
         if (s.detail) hostStatusLine.appendChild(detail);
+
+        // A COMMAND YOU CAN PASTE, because pressing run is the one step that
+        // stays yours. A userscript cannot start a process — no GM_* API
+        // exposes that, and this project mandates @grant none anyway, so even
+        // the weaker grants are off the table (HANDOFF rule 1). What it CAN do
+        // is remove every other bit of friction: navigator.clipboard needs no
+        // grant and is already in production use for plan sharing.
+        if (s.state === HOST_STATES.NO_HOST || s.state === HOST_STATES.MISMATCH) {
+          const cmdRow = document.createElement('div');
+          cmdRow.style.cssText = 'display:flex; align-items:center; gap:6px; margin-top:6px;';
+          const cmd = document.createElement('code');
+          cmd.textContent = HOST_START_COMMAND;
+          cmd.style.cssText = 'flex:1; font-size:var(--apoz-fs-caption); opacity:.8; '
+            + 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+          const copyBtn = document.createElement('button');
+          copyBtn.type = 'button';
+          copyBtn.className = 'apoz-ui-btn';
+          copyBtn.textContent = 'Copy';
+          copyBtn.setAttribute('data-tooltip',
+            'Copies the command that starts the job host. Run it in a terminal in your queslar-core clone. '
+            + 'A userscript cannot start it for you — nothing in the browser sandbox can launch a program.');
+          copyBtn.setAttribute('data-tooltip-wide', '');
+          copyBtn.addEventListener('click', () => {
+            try {
+              navigator.clipboard.writeText(HOST_START_COMMAND);
+              toast('Start command copied.', { type: 'success', duration: 3000 });
+            } catch (e) {
+              toast('Could not copy — select the command and copy it by hand.', { type: 'warn' });
+            }
+          });
+          cmdRow.appendChild(cmd);
+          cmdRow.appendChild(copyBtn);
+          hostStatusLine.appendChild(cmdRow);
+        }
 
         const cap = s.health && s.health.capacity;
         // `style.display`, not `.hidden`. This row carries an inline
@@ -3525,6 +3747,14 @@
     // NOT 'ok'/'error'. Each state has a different fix, and collapsing them
     // into one means the user is told "it didn't work" and left to guess which
     // of four things to try.
+    // The host is started BY HAND, always. server/README.md §7 states the
+    // constraint plainly ("Tampermonkey cannot ship a backend... It cannot
+    // install a program, start a process, open a listening socket, or keep
+    // anything alive after the tab closes") and it is a property of the
+    // browser sandbox, not a gap to be worked around. The most a script can do
+    // is detect, explain, and hand you the command.
+    const HOST_START_COMMAND = 'node server/host.mjs --port 8787';
+
     const HOST_STATES = Object.freeze({
       UNKNOWN: 'unknown',            // not checked yet
       READY: 'ready',
@@ -3573,7 +3803,21 @@
         if (health.protocolVersion !== JOBS_PROTOCOL_VERSION) {
           hostState = {
             state: HOST_STATES.MISMATCH,
-            detail: `host speaks protocol v${health.protocolVersion}, this script speaks v${JOBS_PROTOCOL_VERSION} — update whichever is older`,
+            // NAME WHICH SIDE IS STALE. This used to print both numbers and
+            // say "update whichever is older", leaving the arithmetic to the
+            // reader — and the two sides update by completely different
+            // mechanisms, so knowing which one matters more than knowing the
+            // numbers. The client always knows its own build, so the
+            // comparison is free; not doing it was the whole gap.
+            //
+            // The host deliberately does NOT self-update (server/README.md §7:
+            // a program that replaces itself while holding hours of somebody's
+            // computation is a program that loses it), so the remedy is always
+            // a manual pull in the dev clone. The release repo publishes the
+            // userscripts only — there is no installer for the host to point at.
+            detail: health.protocolVersion < JOBS_PROTOCOL_VERSION
+              ? `The HOST is older (speaks v${health.protocolVersion}, this script speaks v${JOBS_PROTOCOL_VERSION}). In your queslar-core clone: git pull, then restart the host.`
+              : `THIS SCRIPT is older (speaks v${JOBS_PROTOCOL_VERSION}, the host speaks v${health.protocolVersion}). Update Apoz Core from the menu, or in the Tampermonkey dashboard.`,
             health, at: Date.now(),
           };
           return hostState;
@@ -4011,6 +4255,35 @@
   // One command to answer "why is it not there?", because every previous
   // round of this has been guesswork over chat. Deliberately a global and
   // deliberately plain text: it is for pasting back, not for programs.
+  // THE FLOOR UNDER EVERY OTHER RESET. The menu's reset fixes positions,
+  // Settings' fixes sizes, and Settings' own reset fixes preferences — but all
+  // three live inside a UI that a bad stored value could, in principle, stop
+  // from rendering. This one needs nothing but a console, clears every key
+  // this script owns, and says exactly what it removed.
+  //
+  // Deliberately NOT wired to a button: it throws away window layouts, the job
+  // host address and every preference at once, which is a thing to reach for
+  // when something is broken, not something to sit one misclick away.
+  window.__apozResetCore = function (confirmToken) {
+    const keys = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.indexOf('apoz:') === 0 || k.indexOf('apoz-core-') === 0)) keys.push(k);
+      }
+    } catch (e) { console.warn('[ApozCore] cannot read localStorage:', e); return; }
+    if (confirmToken !== 'yes') {
+      console.log('[ApozCore] __apozResetCore() would remove ' + keys.length + ' key(s):');
+      for (const k of keys) console.log('   ' + k);
+      console.log('[ApozCore] This does NOT touch a module\'s own saved data unless listed above.');
+      console.log('[ApozCore] Re-run as __apozResetCore("yes") to actually clear them, then reload.');
+      return keys;
+    }
+    for (const k of keys) { try { localStorage.removeItem(k); } catch (e) { /* keep going */ } }
+    console.log('[ApozCore] cleared ' + keys.length + ' key(s). Reload the page.');
+    return keys;
+  };
+
   window.__apozDiag = function () {
     const q = Array.isArray(window.__apozModules) ? window.__apozModules : [];
     const group = document.getElementById('apoz-core-group');

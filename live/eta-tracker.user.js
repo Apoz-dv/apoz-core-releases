@@ -2,7 +2,7 @@
 // @name         Apoz Core: Combat Slot ETA Tracker
 // @namespace    apoz-core
 // @author       Apoz
-// @version      4.8.0
+// @version      4.9.0
 // @description  Apoz Core module (requires "Apoz Core"). Read-only overlay: estimates time until the Combat pet slot upgrade is affordable from your live gold and the exact upgrade-cost formula (no need to sit on the Pets page), rings a gentle alarm - and optionally a desktop notification - when it is, and stays accurate in a backgrounded tab. Ships the Party Gold ROI calculator. No auto-clicking.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -49,7 +49,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("eta-tracker", "4.8.0-dev", function (Core) {
+  })("eta-tracker", "4.9.0-dev", function (Core) {
 
 
   const ACTION_MS = 10_000;
@@ -1173,6 +1173,7 @@
         : 'press Start (no limit)');
       setText(ui.heroTime, '');
     }
+    renderReadiness();
     setAttr(ui.startBtn, 'disabled', runState === 'running');
     setAttr(ui.stopBtn, 'disabled', runState === 'idle');
 
@@ -1186,7 +1187,7 @@
           : 'Need a gold/action rate (auto-grabbed or custom).');
     } else if (isReady) {
       setText(ui.alarmHeadline, '🔔 Upgrade ready!');
-      if (ui.alarmHeadline.style.color !== 'rgb(62, 207, 106)') ui.alarmHeadline.style.color = '#3ecf6a';
+      if (ui.alarmHeadline.style.color !== 'var(--apoz-success)') ui.alarmHeadline.style.color = 'var(--apoz-success)';
       setText(ui.alarmSub, trackerAcknowledged ? 'Snoozed until the next upgrade.' : 'Alarm repeating every 30s.');
     } else if (staleEta && runState !== 'running') {
       // An ETA left over from a previous session, already in the past, but
@@ -1245,6 +1246,59 @@
     renderAlarmSettings();
   }
 
+  // ---- READINESS: the one failure that looks like success ----
+  //
+  // If no gold rate has been measured, this module can still show a countdown
+  // -- it just has nothing real to base it on. That is worse than showing
+  // nothing, because a fictional ETA arms a fictional alarm and you plan
+  // around it. The rule everywhere else in this project is "refuse rather than
+  // guess"; the UI half of that is saying which input is missing, out loud,
+  // where you are already looking.
+  //
+  // Ordered by how badly each breaks the answer, and only the worst is shown:
+  // a stack of warnings is a thing people stop reading.
+  function readinessState() {
+    if (autoRateRaw === null && customRateRaw === null) {
+      return { level: 'warn', glyph: '!',
+        text: 'No gold rate measured yet. Open the Party Battle page once and this will read it '
+          + 'by itself - until then there is no ETA and the alarm cannot arm.' };
+    }
+    if (lastSync.level === null) {
+      return { level: 'warn', glyph: '!',
+        text: 'Slot level unknown. Open your Pets page once so it can see which upgrade you are saving for.' };
+    }
+    if (customRateRaw !== null) {
+      return { level: 'warn', glyph: '!',
+        text: 'Using a manual rate from Settings, not a measured one. The ETA is hypothetical - '
+          + 'press Auto there to go back to reading it.' };
+    }
+    if (goldSnapshot() === null) {
+      return { level: 'warn', glyph: '!',
+        text: 'Cannot read your gold right now. Keeping the last value; the ETA is as stale as the Synced line says.' };
+    }
+    return { level: 'ok', glyph: '\u2713',
+      text: 'Reading your gold and rate automatically. No server or companion program involved.' };
+  }
+
+  function renderReadiness() {
+    if (!ui.readiness) return;
+    const r = readinessState();
+    // The OK state is deliberately NOT hidden. "Nothing is wrong" is the thing
+    // you want confirmed before walking away from a browser for two hours, and
+    // a banner that only ever appears when broken teaches you to ignore the
+    // space it occupies.
+    ui.readiness.hidden = false;
+    setAttr(ui.readiness, 'class', 'qett-notice qett-notice-' + r.level);
+    ui.readiness.innerHTML = '';
+    const g = document.createElement('span');
+    g.className = 'qett-notice-g';
+    g.textContent = r.glyph;
+    const t = document.createElement('span');
+    t.textContent = r.text;
+    ui.readiness.appendChild(g);
+    ui.readiness.appendChild(t);
+  }
+
   function masterTick() {
     if (runState === 'running') {
       const st = runStatus();
@@ -1272,6 +1326,7 @@
   let windowHandle = null; // Core.createWindow(...) — owns geometry, drag, resize, chrome
   let activity = null;     // Core.ui.activity(...) — the module's own record of what it did
   let cadenceNode = null;  // the alarm-cadence rows, adopted by the Settings pane
+  let rateNode = null;     // the manual rate override, likewise
 
   // say(level, text) — one call site for every "tell the user what happened".
   // Safe before the panel is built and safe against an older Core: a module
@@ -1351,6 +1406,22 @@
          curve between the two gap fields, and with no control for it you
          could set both ends of a shape you could not see. */
       .qett-adv-body { display: flex; flex-direction: column; gap: var(--apoz-s3); }
+
+      /* THE READINESS LINE. An ETA computed without a measured gold rate is
+         this module's one failure that still looks like success: a number
+         appears, it counts down, and it is fiction. So the absence of the
+         reading gets its own always-visible line rather than being inferred
+         from a dash in a detail row. Warn-coloured when something real is
+         missing, quiet when everything is being read. */
+      .qett-notice { font-size: var(--apoz-fs-control); line-height: 1.45;
+        border: 1px solid transparent; border-radius: var(--apoz-r-sm);
+        padding: var(--apoz-s3) var(--apoz-s4); display: flex; gap: var(--apoz-s3);
+        align-items: flex-start; }
+      .qett-notice-ok { color: var(--apoz-success); opacity: var(--apoz-em-normal);
+        border-color: color-mix(in srgb, var(--apoz-success) 35%, var(--apoz-border, var(--border))); }
+      .qett-notice-warn { color: var(--apoz-warn);
+        border-color: color-mix(in srgb, var(--apoz-warn) 45%, var(--apoz-border, var(--border))); }
+      .qett-notice-g { flex: none; font-weight: 700; }
     `;
     document.head.appendChild(style);
 
@@ -1371,12 +1442,32 @@
     // readout resizing the slider beside it as the percentage gains a digit —
     // the actual mechanism behind the reported alarm drift. Nothing was
     // misaligned; the track was breathing.
+    // ---- LAYOUT: status at the top, data in the middle, controls by subject ----
+    //
+    // The previous arrangement mixed all three. A group called "Progress" held
+    // the alarm's own headline AND the detail readouts AND the Snooze/Test
+    // buttons, so the thing you look at (is it ringing?), the thing you read
+    // (what does it know?) and the thing you press (make it stop) were one
+    // block. That is most of what "the layout is a bit chaotic" was pointing
+    // at. Now the alarm's state sits with the countdown it belongs to, the
+    // detail rows are only data, and every alarm control lives under Alarm.
+    //
+    // CUSTOM ETA IS GONE FROM THE MAIN WINDOW. The whole point of this module
+    // is that it reads the rate itself; a hand-typed rate produces a
+    // hypothetical ETA, which is a debugging tool rather than a daily control,
+    // and giving it a permanent panel implied the automatic path was optional.
+    // It moved to the Settings tab. What replaced it is the opposite thing: a
+    // readiness line that says out loud when the automatic reading is MISSING,
+    // because an ETA computed without a real gold rate is the one failure this
+    // module can have that still looks like it is working.
     content.innerHTML = `
         <span id="qett-header-party" class="qett-header-party"></span>
         <div id="qett-hero" class="apoz-ui-answer">
           <div id="qett-hero-actions" class="apoz-ui-answer-value">OFF</div>
           <div id="qett-hero-label" class="apoz-ui-answer-sub">press Start to begin</div>
           <div id="qett-hero-time" class="apoz-ui-answer-sub apoz-num"></div>
+          <div id="qett-alarm-headline">Idle</div>
+          <div id="qett-alarm-sub" class="qett-hint-inline">-</div>
         </div>
         <div class="qett-buttons">
           <button id="qett-start" class="apoz-ui-btn apoz-ui-btn-primary" type="button">Start</button>
@@ -1384,13 +1475,15 @@
           <button id="qett-reset" class="apoz-ui-btn" type="button">Reset</button>
         </div>
 
+        <div id="qett-readiness" class="qett-notice" hidden></div>
+
         <div class="apoz-ui-group">
           <div class="apoz-ui-group-label">Session<span class="qett-info-icon"
             data-tooltip="Counts down to the party's own remaining actions, so it ends when the party runs out rather than after a fixed number of your own. If that reading is unavailable it falls back to counting your actions instead, and says so."
             data-tooltip-wide><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
           <div class="apoz-ui-rows">
             <span class="k">Run until</span>
-            <input id="qett-duration" type="number" min="0" placeholder="∞" />
+            <input id="qett-duration" type="number" min="0" placeholder="&#8734;" />
             <span class="t">left</span>
             <span class="wide qett-hint-inline">party actions remaining</span>
           </div>
@@ -1400,67 +1493,77 @@
         </div>
 
         <div class="apoz-ui-group">
-          <div class="apoz-ui-group-label">Progress</div>
-          <div id="qett-alarm-headline">Idle</div>
-          <div id="qett-alarm-sub">—</div>
-          <div class="apoz-ui-rows" style="margin-top:var(--apoz-s3)">
-            <span class="k">Level</span><span class="v" id="qett-detail-level">—</span><span class="t"></span>
-            <span class="k">Gold</span><span class="v"><span id="qett-detail-gold">—</span>
+          <div class="apoz-ui-group-label">What it has read</div>
+          <div class="apoz-ui-rows">
+            <span class="k">Level</span><span class="v" id="qett-detail-level">-</span><span class="t"></span>
+            <span class="k">Gold</span><span class="v"><span id="qett-detail-gold">-</span>
               <span id="qett-detail-gold-source" class="qett-hint-inline"></span></span><span class="t"></span>
-            <span class="k">Rate</span><span class="v"><span id="qett-detail-rate">—</span>
+            <span class="k">Rate</span><span class="v"><span id="qett-detail-rate">-</span>
               <span id="qett-detail-rate-source" class="qett-hint-inline"></span></span><span class="t"></span>
             <span class="k">Synced</span><span class="v" id="qett-detail-synced">never</span><span class="t"></span>
-          </div>
-          <div class="qett-buttons qett-two">
-            <button id="qett-snooze" class="apoz-ui-btn" type="button">Snooze</button>
-            <button id="qett-test-alarm" class="apoz-ui-btn" type="button">Test</button>
           </div>
         </div>
 
         <div class="apoz-ui-group">
           <div class="apoz-ui-group-label">Alarm<button type="button" class="apoz-ui-group-link"
-            id="qett-advanced-link">Cadence ↗</button><span class="qett-info-icon"
-            data-tooltip="The chime starts quick and slows down, then stops on its own so a wrong reading can never trap you. A hidden tab has its timers slowed to roughly once a minute; the countdown stays correct anyway because it reads the clock rather than counting ticks, and the two options here make the ALARM arrive on time too."
+            id="qett-advanced-link">Cadence &#8599;</button><span class="qett-info-icon"
+            data-tooltip="The chime starts quick and slows down, then stops on its own so a wrong reading can never trap you. Everything about the cadence is on this module's Settings tab."
             data-tooltip-wide><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
           <div class="apoz-ui-rows">
             <label class="k" for="qett-alarm-volume">Volume</label>
             <input id="qett-alarm-volume" type="range" min="0" max="100" step="5" />
             <span id="qett-alarm-volume-out" class="t"></span>
           </div>
+          <div class="qett-buttons">
+            <button id="qett-test-alarm" class="apoz-ui-btn" type="button">Test</button>
+            <button id="qett-snooze" class="apoz-ui-btn" type="button">Snooze</button>
+            <button id="qett-alarm-silence" class="apoz-ui-btn" type="button">Silence</button>
+          </div>
+        </div>
+
+        <div class="apoz-ui-group">
+          <div class="apoz-ui-group-label">While the tab is in the background<span class="qett-info-icon"
+            data-tooltip="This module runs entirely in your browser. It needs no server, no companion program and no account access - if you were handed this script on its own, the alarm works."
+            data-tooltip-wide><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
+          <div class="qett-hint-inline" id="qett-bg-explain">
+            The countdown stays correct in a hidden tab, because it reads the clock rather than
+            counting ticks. What a background tab does break is the SOUND: browsers throttle or
+            mute audio in tabs you are not looking at. These two are the way around that.
+          </div>
           <label class="qett-check" id="qett-notify-row">
             <input id="qett-notify" type="checkbox" /><span>Desktop notification when ready</span></label>
           <label class="qett-check" id="qett-keepawake-row">
             <input id="qett-keepawake" type="checkbox" /><span>Keep tab awake while running</span></label>
           <div id="qett-bg-note" class="qett-hint-inline"></div>
-          <button id="qett-alarm-silence" class="apoz-ui-btn" type="button"
-            style="margin-top:var(--apoz-s3)">Silence now</button>
-          <div class="qett-adv-body" hidden>
-              <div class="apoz-ui-rows">
-                <label class="k" for="qett-alarm-first">First gap</label>
-                <input id="qett-alarm-first" type="number" min="2" max="600" step="1" />
-                <span class="t">s</span>
-                <label class="k" for="qett-alarm-growth">Growth</label>
-                <input id="qett-alarm-growth" type="number" min="1" max="4" step="0.05" />
-                <span class="t">×</span>
-                <label class="k" for="qett-alarm-max">Ceiling</label>
-                <input id="qett-alarm-max" type="number" min="5" max="3600" step="5" />
-                <span class="t">s</span>
-                <label class="k" for="qett-alarm-repeats">Stop after</label>
-                <input id="qett-alarm-repeats" type="number" min="1" max="999" step="1" />
-                <span class="t">×</span>
-              </div>
-              <div id="qett-alarm-preview" class="qett-hint-inline"></div>
-              <div class="qett-buttons qett-two">
-                <span></span>
-                <button id="qett-alarm-defaults" class="apoz-ui-btn" type="button">Defaults</button>
-              </div>
-          </div>
         </div>
 
-        <div class="apoz-ui-group">
-          <div class="apoz-ui-group-label">Custom ETA<span class="qett-info-icon"
-            data-tooltip="Overrides the auto-grabbed rate for a hypothetical estimate. Press Auto to go back to automatic."
-            ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
+        <div class="qett-adv-body" hidden>
+          <div class="apoz-ui-rows">
+            <label class="k" for="qett-alarm-first">First gap</label>
+            <input id="qett-alarm-first" type="number" min="2" max="600" step="1" />
+            <span class="t">s</span>
+            <label class="k" for="qett-alarm-growth">Growth</label>
+            <input id="qett-alarm-growth" type="number" min="1" max="4" step="0.05" />
+            <span class="t">&#215;</span>
+            <label class="k" for="qett-alarm-max">Ceiling</label>
+            <input id="qett-alarm-max" type="number" min="5" max="3600" step="5" />
+            <span class="t">s</span>
+            <label class="k" for="qett-alarm-repeats">Stop after</label>
+            <input id="qett-alarm-repeats" type="number" min="1" max="999" step="1" />
+            <span class="t">&#215;</span>
+          </div>
+          <div id="qett-alarm-preview" class="qett-hint-inline"></div>
+          <div class="qett-buttons qett-two">
+            <span></span>
+            <button id="qett-alarm-defaults" class="apoz-ui-btn" type="button">Defaults</button>
+          </div>
+        </div>
+        <div class="qett-adv-rate" hidden>
+          <div class="qett-hint-inline" style="margin-bottom:var(--apoz-s3)">
+            Overrides the rate this module reads for itself, to work out a hypothetical ETA.
+            Leave it empty unless you are testing something: a typed rate is not measured, so
+            the alarm it produces is a guess.
+          </div>
           <div class="qett-setter">
             <input id="qett-gold-rate" type="text" placeholder="e.g. 12,34 (B/action)" />
             <button id="qett-gold-rate-set" class="apoz-ui-btn" type="button">Set</button>
@@ -1514,6 +1617,7 @@
     });
 
     ui.alarmVolume = content.querySelector('#qett-alarm-volume');
+    ui.readiness = content.querySelector('#qett-readiness');
     ui.alarmVolumeOut = content.querySelector('#qett-alarm-volume-out');
     ui.alarmFirst = content.querySelector('#qett-alarm-first');
     ui.alarmMax = content.querySelector('#qett-alarm-max');
@@ -1601,6 +1705,7 @@
     // what keeps one set of inputs: two copies would drift the moment one was
     // edited while the other was on screen.
     cadenceNode = content.querySelector('.qett-adv-body');
+    rateNode = content.querySelector('.qett-adv-rate');
     const advLink = content.querySelector('#qett-advanced-link');
     if (advLink) {
       advLink.addEventListener('click', () => {
@@ -1752,6 +1857,14 @@
           note.className = 'qett-hint-inline';
           note.textContent = 'Open the ETA Tracker window once to load these.';
           container.appendChild(note);
+        }
+        if (rateNode) {
+          const h2 = document.createElement('div');
+          h2.className = 'apoz-settings-cat';
+          h2.textContent = 'Manual rate override (testing)';
+          container.appendChild(h2);
+          rateNode.hidden = false;
+          container.appendChild(rateNode);
         }
       },
     },
