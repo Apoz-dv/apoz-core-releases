@@ -2,7 +2,7 @@
 // @name         Apoz Core: Combat Slot ETA Tracker
 // @namespace    apoz-core
 // @author       Apoz
-// @version      4.7.4
+// @version      4.8.0
 // @description  Apoz Core module (requires "Apoz Core"). Read-only overlay: estimates time until the Combat pet slot upgrade is affordable from your live gold and the exact upgrade-cost formula (no need to sit on the Pets page), rings a gentle alarm - and optionally a desktop notification - when it is, and stays accurate in a backgrounded tab. Ships the Party Gold ROI calculator. No auto-clicking.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -49,7 +49,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("eta-tracker", "4.7.4-dev", function (Core) {
+  })("eta-tracker", "4.8.0-dev", function (Core) {
 
 
   const ACTION_MS = 10_000;
@@ -322,6 +322,7 @@
 
   let partyActionsRemaining = null;
   let partyActionsAtMs = null;
+  let partyStaleSaidAtMs = null; // rate-limits the stale-party-reading strip line
   let goldNow = null;      // gold read off the persistent counter
   let goldAtMs = null;
   let goldFrom = null;     // 'sidebar' | 'pets card' - shown, never guessed
@@ -358,6 +359,43 @@
     return runEndsAtMs === null ? null : runEndsAtMs - Date.now();
   }
 
+  // ---- the run's end condition (v4.8) ----
+  //
+  // "Run for N actions" became "run until N actions remain, PARTY-WIDE", and
+  // that is not a relabel: it swaps a DEADLINE, which cannot fail, for a
+  // THRESHOLD on a live probe, which can. `configuredRunActions` now means the
+  // party-actions figure to stop AT, not a count of your own actions to burn.
+  //
+  // Three rules, and the first is the one that matters:
+  //
+  // 1. AN ABSENT READING NEVER ENDS THE SESSION. Treating "I could not read
+  //    the party's actions" as "the party has none left" is absent-as-zero,
+  //    the exact failure CLAUDE.md rule 3 exists to stop, and here it would
+  //    silence an alarm the user is relying on. Absent holds, and says so.
+  // 2. A reading that has gone stale is reported, not trusted silently. The
+  //    ambient poll refreshes roughly every 8s; a value minutes old means the
+  //    page stopped showing it, which the user should know before the
+  //    threshold fires off it.
+  // 3. With no party reading ever seen, the old clock-based deadline still
+  //    governs, so a session started on a page that never exposes the figure
+  //    behaves exactly as it did before rather than running forever.
+  const PARTY_STALE_MS = 150000;
+  function runStatus() {
+    if (configuredRunActions === null) return { mode: 'unlimited', done: false };
+    if (partyActionsRemaining !== null) {
+      const staleMs = partyActionsAtMs === null ? null : Date.now() - partyActionsAtMs;
+      return {
+        mode: 'party',
+        done: partyActionsRemaining <= configuredRunActions,
+        left: partyActionsRemaining - configuredRunActions,
+        stale: staleMs !== null && staleMs > PARTY_STALE_MS,
+        staleMs,
+      };
+    }
+    const left = runRemaining();
+    return { mode: 'clock', done: left !== null && left <= 0, left };
+  }
+
   function startTracking() {
     if (runState === 'running') return;
     runEndsAtMs = configuredRunActions !== null ? Date.now() + configuredRunActions * ACTION_MS : null;
@@ -368,13 +406,27 @@
     const ctx = ensureAudioCtx();
     if (ctx && ctx.state === 'suspended') ctx.resume();
     applyKeepAwake();
+    say('done', configuredRunActions === null
+      ? 'Session started — running until you stop it.'
+      : `Session started — running until ${configuredRunActions} party actions remain.`);
+    reportState('running', '');
     refreshFromLiveData();
   }
 
-  function stopTracking() {
+  // `reason` distinguishes the two ways a session ends, because they are not
+  // the same event: reaching the threshold is a RESULT, and the user pressing
+  // Stop is them ending it. The strip's levels carry that difference (`done`
+  // vs `stopped`) rather than flattening both into "session over".
+  function stopTracking(reason) {
+    const wasRunning = runState === 'running';
     runState = 'idle';
     runEndsAtMs = null;
     applyKeepAwake();
+    if (wasRunning) {
+      if (reason) say('done', reason);
+      else say('stopped', 'Session stopped by you.');
+    }
+    reportState('idle', '');
     render();
   }
 
@@ -383,6 +435,7 @@
     trackerAlarmFired = false;
     trackerAcknowledged = false;
     nextAlarmAtMs = null;
+    say('done', 'Session reset.');
     refreshFromLiveData();
   }
 
@@ -408,6 +461,7 @@
   let trackerAcknowledged = false;
   let nextAlarmAtMs = null;
   let lastSync = { atMs: null, level: null, current: null };
+  let goldRefusedAtMs = null; // rate-limits the "gold read refused" strip line
   // Both pet slot levels, remembered across pages. The tracker itself only
   // needs `combat`; `utility` exists so the ROI tool can be handed a real
   // starting position instead of a placeholder.
@@ -487,6 +541,19 @@
         autoRateAtMs = Date.now();
         if (card.taxRate !== null) derivedTaxRate = card.taxRate;
         partyRateGrabbedThisVisit = true;
+        // Named with the VALUE, not just "updated". A confirmation that does
+        // not say what it read leaves you no better off than silence — you
+        // still have to open the panel to find out whether it got a sane
+        // number, which is the trip the line was supposed to save.
+        say('done', `Party gold rate updated — ${formatGold(card.kept)}/action`
+          + (card.taxRate !== null ? ` (tax ${Math.round(card.taxRate * 100)}%)` : ''));
+      } else {
+        // The page said it was the Party Battle page and the card was not
+        // readable. Silence here is what made this whole class of problem
+        // invisible: nothing distinguishes "no card on this page" from "the
+        // scan has never worked". Once per visit, not once per poll.
+        partyRateGrabbedThisVisit = true;
+        say('refused', 'On the Party Battle page but could not read the gold card — rate left unchanged.');
       }
     }
 
@@ -503,7 +570,28 @@
       const current = readCurrentGold(card);
       const btn = findUpgradeButton(card);
       bindUpgradeButtonListener(btn);
-      lastSync = { atMs: Date.now(), level, current };
+      // PER-FIELD, NOT WHOLE-OBJECT. This used to be
+      //   lastSync = { atMs: Date.now(), level, current };
+      // which wrote BOTH probes' results including their nulls, so one failed
+      // read replaced a perfectly good previous value with "unknown" — while
+      // the identical pattern twenty lines above (slotLevels) correctly guards
+      // with `if (lv !== null)`. Two sibling reads, opposite behaviour.
+      //
+      // This is a CLAUDE.md rule-3 violation, and absent-treated-as-present is
+      // the failure mode this project has been hurt by worst: a null gold read
+      // became "you have no gold", which moves the ETA rather than pausing it.
+      // Keeping the last known value and SAYING the read refused is the whole
+      // of §9.4 — refuse rather than guess, and tell the user which input went
+      // missing rather than degrading silently.
+      lastSync.atMs = Date.now();
+      if (level !== null) lastSync.level = level;
+      if (current !== null) lastSync.current = current;
+      else if (goldRefusedAtMs === null || Date.now() - goldRefusedAtMs > 60000) {
+        // Rate-limited: this poll runs every few seconds and a genuinely
+        // absent card would otherwise fill the strip with one line per tick.
+        goldRefusedAtMs = Date.now();
+        say('refused', 'Could not read gold from the slot card — keeping the last value.');
+      }
       if (btn && !btn.disabled) {
         trackerEtaMs = Date.now();
       } else {
@@ -1009,6 +1097,7 @@
     setFieldUnlessEditing(ui.alarmFirst, String(Math.round(alarmCfg.firstMs / 1000)));
     setFieldUnlessEditing(ui.alarmMax, String(Math.round(alarmCfg.maxMs / 1000)));
     setFieldUnlessEditing(ui.alarmRepeats, String(alarmCfg.maxRepeats));
+    setFieldUnlessEditing(ui.alarmGrowth, String(alarmCfg.growth));
 
     const key = `${alarmCfg.firstMs}|${alarmCfg.maxMs}|${alarmCfg.growth}|${alarmCfg.maxRepeats}`;
     if (key === alarmPreviewKey) return;
@@ -1044,18 +1133,44 @@
     const staleEta = trackerEtaMs !== null && trackerEtaMs <= Date.now();
     const isReady = runState === 'running' && staleEta;
     Core.setBadge(MODULE_ID, isReady);
+    // The nav's state slot. "armed" was rejected as the wording — a session is
+    // RUNNING, and when the upgrade is affordable the module needs you, which
+    // is what `attention` means everywhere else in the overlay.
+    if (runState === 'running') {
+      const st = runStatus();
+      reportState(isReady ? 'attention' : 'running',
+        isReady ? 'upgrade ready'
+          : st.mode === 'party' && !st.stale ? `${st.left} to go`
+          : st.mode === 'clock' && st.left !== null ? formatMsRemaining(st.left).timeStr
+          : 'running');
+    } else {
+      reportState('idle', '');
+    }
     if (!panelOpen) return;
 
     if (runState === 'running') {
-      const left = runRemaining();
-      setText(ui.heroActions, left === null ? '∞' : formatMsRemaining(left).actionsStr);
-      setText(ui.heroLabel, 'actions remaining · alarm armed');
-      setText(ui.heroTime, left === null ? 'unlimited' : formatMsRemaining(left).timeStr);
+      const st = runStatus();
+      // The hero reads the PARTY figure when there is one, because that is now
+      // what the session actually ends on — showing a clock-derived count
+      // beside a party-derived end condition would be showing the wrong number
+      // confidently, which is worse than showing none.
+      if (st.mode === 'party') {
+        setText(ui.heroActions, String(Math.max(0, st.left)));
+        setText(ui.heroLabel, st.stale
+          ? 'party actions to go · reading is stale'
+          : 'party actions to go');
+        setText(ui.heroTime, `${partyActionsRemaining} left, stopping at ${configuredRunActions}`);
+      } else {
+        const left = runRemaining();
+        setText(ui.heroActions, left === null ? '∞' : formatMsRemaining(left).actionsStr);
+        setText(ui.heroLabel, left === null ? 'running · no limit set' : 'actions remaining');
+        setText(ui.heroTime, left === null ? 'unlimited' : formatMsRemaining(left).timeStr);
+      }
     } else {
       setText(ui.heroActions, 'OFF');
       setText(ui.heroLabel, configuredRunActions !== null
-        ? `press Start to arm for ${configuredRunActions} actions`
-        : 'press Start to arm (unlimited)');
+        ? `press Start — stops at ${configuredRunActions} party actions`
+        : 'press Start (no limit)');
       setText(ui.heroTime, '');
     }
     setAttr(ui.startBtn, 'disabled', runState === 'running');
@@ -1132,8 +1247,19 @@
 
   function masterTick() {
     if (runState === 'running') {
-      const left = runRemaining();
-      if (left !== null && left <= 0) { stopTracking(); return; }
+      const st = runStatus();
+      if (st.done) {
+        stopTracking(st.mode === 'party'
+          ? `Party actions reached ${configuredRunActions} — session ended.`
+          : 'Session length reached — ended.');
+        return;
+      }
+      // Rate-limited to once per stale window, not once per tick: this runs
+      // every second and the strip is a record, not a siren.
+      if (st.stale && (partyStaleSaidAtMs === null || Date.now() - partyStaleSaidAtMs > PARTY_STALE_MS)) {
+        partyStaleSaidAtMs = Date.now();
+        say('refused', `Party actions last read ${formatAgo(partyActionsAtMs)} — still running, not ending on a stale figure.`);
+      }
       checkTrackerReady();
     }
     render();
@@ -1144,6 +1270,22 @@
   const ui = {};
   let panelOpen = false;
   let windowHandle = null; // Core.createWindow(...) — owns geometry, drag, resize, chrome
+  let activity = null;     // Core.ui.activity(...) — the module's own record of what it did
+  let cadenceNode = null;  // the alarm-cadence rows, adopted by the Settings pane
+
+  // say(level, text) — one call site for every "tell the user what happened".
+  // Safe before the panel is built and safe against an older Core: a module
+  // must never fail because its feedback surface is missing.
+  function say(level, text) {
+    if (activity && typeof activity[level] === 'function') activity[level](text);
+  }
+
+  // The nav's state slot. Reported on every meaningful transition so the
+  // header can answer "is this still counting down?" without opening the
+  // panel. Guarded for the same reason as everything else here.
+  function reportState(state, detail) {
+    if (typeof Core.setState === 'function') Core.setState(MODULE_ID, state, detail || '');
+  }
 
   // Migrated onto Core's shared window framework (v6): the chrome (panel
   // border/shadow, header, drag, resize, close button) that used to be
@@ -1151,65 +1293,64 @@
   // Core.createWindow — every rule below is CONTENT styling, not chrome.
   function buildPanelContent() {
     const style = document.createElement('style');
+    // MODULE-SPECIFIC RULES ONLY. Everything that was a re-typed copy of a
+    // Core primitive is gone: .qett-group WAS byte-for-byte Core's
+    // .apoz-ui-group, the tooltip ::after was a hand-copy of Core's global
+    // [data-tooltip], and .qett-body-btn/.qett-small-btn duplicated
+    // .apoz-ui-btn-primary/.apoz-ui-btn. Those were not variations — they were
+    // the shared thing, typed twice, and then drifting apart. That drift is
+    // the whole of the reported "these two modules look like different
+    // products".
+    //
+    // EVERY THEME READ IS NAMESPACED. This block used to read the GAME's raw
+    // var(--border) / var(--input) / var(--primary), which meant choosing
+    // "Apoz Turquoise" restyled every surface in the overlay EXCEPT this
+    // module. fighter-allocator already carried a comment about this exact bug
+    // class; this module never got the fix. The raw variable stays as the
+    // fallback so an older Core underneath still renders something sane.
     style.textContent = `
-      #qett-header-party { font-size: 11px; opacity: .75; font-weight: 500; cursor: default;
-        text-align: right; margin-bottom: -2px; }
+      #qett-header-party { font-size: var(--apoz-fs-control); opacity: var(--apoz-em-normal);
+        font-weight: 500; cursor: default; text-align: right; margin-bottom: -2px;
+        font-variant-numeric: tabular-nums; }
 
-      #qett-hero { text-align: center; }
-      #qett-hero-actions { font-size: 24px; font-weight: 800; line-height: 1.1; }
-      #qett-hero-label { font-size: 10px; text-transform: uppercase; opacity: .65; letter-spacing: .04em; margin-top: 3px; }
-      #qett-hero-time { font-size: 12px; opacity: .8; margin-top: 3px; }
-
-      .qett-buttons { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
+      .qett-buttons { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--apoz-s4);
+        margin-top: var(--apoz-s4); }
       .qett-buttons.qett-two { grid-template-columns: 1fr auto; align-items: center; }
 
-      .qett-group { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: flex;
-        flex-direction: column; gap: 5px; }
-      .qett-group-label { font-weight: bold; opacity: .7; text-transform: uppercase; font-size: 10px;
-        letter-spacing: .04em; }
+      #qett-alarm-headline { font-weight: bold; font-size: var(--apoz-fs-title); }
+      #qett-alarm-sub { opacity: var(--apoz-em-normal); }
+      .qett-hint-inline { opacity: var(--apoz-em-muted); font-size: var(--apoz-fs-caption); }
+      .qett-check { display: flex; align-items: center; gap: 7px; font-size: var(--apoz-fs-control);
+        cursor: pointer; user-select: none; }
+      .qett-check input[type="checkbox"] { width: 13px; height: 13px;
+        accent-color: var(--apoz-primary, var(--primary)); cursor: pointer; margin: 0; }
+      .qett-check.qett-check-off { opacity: var(--apoz-em-muted); }
+      .apoz-ui-rows input[type="range"] { width: 100%; accent-color: var(--apoz-primary, var(--primary));
+        margin: 0; padding: 0; border: none; background: none; }
 
-      #qett-alarm-headline { font-weight: bold; font-size: 13px; }
-      #qett-alarm-sub { opacity: .85; }
-      .qett-detail-grid { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; row-gap: 3px;
-        font-size: 11px; margin-top: 6px; }
-      .qett-detail-label { opacity: .55; }
-      .qett-detail-value { text-align: right; }
-      .qett-hint-inline { opacity: .55; font-size: 10px; }
-      .qett-check { display: flex; align-items: center; gap: 7px; font-size: 11px; cursor: pointer;
-        user-select: none; }
-      .qett-check input[type="checkbox"] { width: 13px; height: 13px; accent-color: var(--primary);
-        cursor: pointer; margin: 0; }
-      .qett-check.qett-check-off { opacity: .5; }
-      .qett-setting-grid { display: grid; grid-template-columns: auto 1fr auto; align-items: center;
-        column-gap: 8px; row-gap: 5px; font-size: 11px; }
-      .qett-setting-grid label { opacity: .7; white-space: nowrap; }
-      .qett-setting-grid input[type="number"] { background: var(--input); color: inherit;
-        border: 1px solid var(--border); border-radius: 4px; padding: 2px 5px; width: 100%;
-        box-sizing: border-box; font: inherit; }
-      .qett-setting-grid input[type="range"] { width: 100%; accent-color: var(--primary); margin: 0; }
-
-      .qett-setter { display: flex; align-items: center; gap: 6px; font-size: 11px; opacity: .85; }
+      .qett-setter { display: flex; align-items: center; gap: var(--apoz-s3);
+        font-size: var(--apoz-fs-control); opacity: var(--apoz-em-normal); }
       .qett-setter input[type="number"], .qett-setter input[type="text"] {
-        background: var(--input); color: inherit; border: 1px solid var(--border);
-        border-radius: 4px; padding: 3px 5px; width: 70px; box-sizing: border-box; }
+        background: var(--apoz-input, var(--input)); color: inherit;
+        border: 1px solid var(--apoz-border, var(--border));
+        border-radius: var(--apoz-r-sm); padding: 3px 5px; width: 70px; box-sizing: border-box;
+        font: inherit; font-variant-numeric: tabular-nums; }
       #qett-gold-rate { width: 130px; }
       .qett-info-icon { display: inline-flex; align-items: center; justify-content: center;
-        opacity: .55; cursor: help; margin-left: 4px; position: relative; }
+        opacity: var(--apoz-em-muted); cursor: help; margin-left: var(--apoz-s2); position: relative; }
       .qett-info-icon:hover { opacity: 1; }
       .qett-info-icon svg { width: 13px; height: 13px; display: block; }
-      .qett-info-icon[data-tooltip]::after { content: attr(data-tooltip); position: absolute; bottom: 140%;
-        left: 50%; transform: translateX(-50%); background: var(--apoz-solid-card, var(--card)); color: var(--apoz-solid-popover-foreground, var(--popover-foreground));
-        border: 1px solid var(--apoz-solid-border, var(--border)); border-radius: 4px; padding: 5px 7px; font-size: 10px;
-        line-height: 1.3; width: 170px; white-space: normal; opacity: 0; pointer-events: none;
-        transition: opacity .08s ease .05s; box-shadow: 0 4px 12px rgba(0,0,0,.5); z-index: 1000002; }
-      .qett-info-icon[data-tooltip]:hover::after { opacity: 1; }
-      button { font-family: inherit; }
-      .qett-body-btn { background: var(--primary); color: var(--primary-foreground); border: none;
-        border-radius: 4px; padding: 6px 8px; cursor: pointer; font-weight: bold; }
-      .qett-body-btn:disabled { opacity: .4; cursor: not-allowed; }
-      .qett-small-btn { background: var(--primary); color: var(--primary-foreground); border: none;
-        border-radius: 4px; padding: 3px 8px; cursor: pointer; font-weight: bold; font-size: 10px; }
-      .qett-small-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+      /* The cadence lives in this module's own Settings tab now (Core v11's
+         sidebar). It is set once and then never touched, so it does not earn
+         permanent main-window space -- while volume IS adjusted out of the
+         box and keeps its row. The rows are BUILT here and re-parented into
+         the pane, so every existing listener and id survives by reference
+         rather than being rebuilt against a second copy.
+         The growth factor is exposed for the first time: it always drove the
+         curve between the two gap fields, and with no control for it you
+         could set both ends of a shape you could not see. */
+      .qett-adv-body { display: flex; flex-direction: column; gap: var(--apoz-s3); }
     `;
     document.head.appendChild(style);
 
@@ -1218,94 +1359,112 @@
     // element handle.setContent() is given.
     const content = document.createElement('div');
     ui.content = content; // referenced later, in render(), outside this closure
+    // ONE GRID TEMPLATE FOR EVERY LABEL/VALUE LIST (DESIGN.md §4).
+    // Progress and Alarm both use .apoz-ui-rows, so their labels, values and
+    // trailing units land on the same three x-positions — groups aligning
+    // with each OTHER, not merely within themselves. The previous markup had
+    // two independent grids, each sizing its own `auto` label column, and a
+    // value right-aligned in one where its neighbour was left-aligned; both
+    // were internally correct and they did not agree.
+    //
+    // The trailing column is a fixed ch width, which is what stops the volume
+    // readout resizing the slider beside it as the percentage gains a digit —
+    // the actual mechanism behind the reported alarm drift. Nothing was
+    // misaligned; the track was breathing.
     content.innerHTML = `
         <span id="qett-header-party" class="qett-header-party"></span>
-        <div id="qett-hero">
-          <div id="qett-hero-actions">OFF</div>
-          <div id="qett-hero-label">press Start to arm</div>
-          <div id="qett-hero-time"></div>
+        <div id="qett-hero" class="apoz-ui-answer">
+          <div id="qett-hero-actions" class="apoz-ui-answer-value">OFF</div>
+          <div id="qett-hero-label" class="apoz-ui-answer-sub">press Start to begin</div>
+          <div id="qett-hero-time" class="apoz-ui-answer-sub apoz-num"></div>
         </div>
         <div class="qett-buttons">
-          <button id="qett-start" class="qett-body-btn" type="button">Start</button>
-          <button id="qett-stop" class="qett-body-btn" type="button">Stop</button>
-          <button id="qett-reset" class="qett-body-btn" type="button">Reset</button>
-        </div>
-        <div class="qett-setter">
-          Run for
-          <input id="qett-duration" type="number" min="0" placeholder="∞" />
-          actions
-          <button id="qett-duration-set" class="qett-small-btn" type="button">Set</button>
+          <button id="qett-start" class="apoz-ui-btn apoz-ui-btn-primary" type="button">Start</button>
+          <button id="qett-stop" class="apoz-ui-btn" type="button">Stop</button>
+          <button id="qett-reset" class="apoz-ui-btn" type="button">Reset</button>
         </div>
 
-        <div class="qett-group">
-          <div class="qett-group-label">Alarm</div>
+        <div class="apoz-ui-group">
+          <div class="apoz-ui-group-label">Session<span class="qett-info-icon"
+            data-tooltip="Counts down to the party's own remaining actions, so it ends when the party runs out rather than after a fixed number of your own. If that reading is unavailable it falls back to counting your actions instead, and says so."
+            data-tooltip-wide><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
+          <div class="apoz-ui-rows">
+            <span class="k">Run until</span>
+            <input id="qett-duration" type="number" min="0" placeholder="∞" />
+            <span class="t">left</span>
+            <span class="wide qett-hint-inline">party actions remaining</span>
+          </div>
+          <div class="qett-buttons qett-two" style="margin-top:0">
+            <span></span><button id="qett-duration-set" class="apoz-ui-btn" type="button">Set</button>
+          </div>
+        </div>
+
+        <div class="apoz-ui-group">
+          <div class="apoz-ui-group-label">Progress</div>
           <div id="qett-alarm-headline">Idle</div>
           <div id="qett-alarm-sub">—</div>
-          <div class="qett-detail-grid">
-            <div class="qett-detail-label">Level</div>
-            <div class="qett-detail-value"><span id="qett-detail-level">—</span></div>
-            <div class="qett-detail-label">Gold</div>
-            <div class="qett-detail-value"><span id="qett-detail-gold">—</span>
-              <span id="qett-detail-gold-source" class="qett-hint-inline"></span></div>
-            <div class="qett-detail-label">Rate</div>
-            <div class="qett-detail-value"><span id="qett-detail-rate">—</span>
-              <span id="qett-detail-rate-source" class="qett-hint-inline"></span></div>
-            <div class="qett-detail-label">Synced</div>
-            <div class="qett-detail-value"><span id="qett-detail-synced">never</span></div>
+          <div class="apoz-ui-rows" style="margin-top:var(--apoz-s3)">
+            <span class="k">Level</span><span class="v" id="qett-detail-level">—</span><span class="t"></span>
+            <span class="k">Gold</span><span class="v"><span id="qett-detail-gold">—</span>
+              <span id="qett-detail-gold-source" class="qett-hint-inline"></span></span><span class="t"></span>
+            <span class="k">Rate</span><span class="v"><span id="qett-detail-rate">—</span>
+              <span id="qett-detail-rate-source" class="qett-hint-inline"></span></span><span class="t"></span>
+            <span class="k">Synced</span><span class="v" id="qett-detail-synced">never</span><span class="t"></span>
           </div>
           <div class="qett-buttons qett-two">
-            <button id="qett-snooze" class="qett-body-btn" type="button">Snooze</button>
-            <button id="qett-test-alarm" class="qett-small-btn" type="button">Test</button>
+            <button id="qett-snooze" class="apoz-ui-btn" type="button">Snooze</button>
+            <button id="qett-test-alarm" class="apoz-ui-btn" type="button">Test</button>
           </div>
         </div>
 
-        <div class="qett-group">
-          <div class="qett-group-label">Alarm settings<span class="qett-info-icon"
-            data-tooltip="The chime starts quick and slows down, then stops on its own so a wrong reading can never trap you. Everything here is adjustable; Defaults puts it all back."
-            ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
-          <div class="qett-setting-grid">
-            <label for="qett-alarm-volume">Volume</label>
+        <div class="apoz-ui-group">
+          <div class="apoz-ui-group-label">Alarm<button type="button" class="apoz-ui-group-link"
+            id="qett-advanced-link">Cadence ↗</button><span class="qett-info-icon"
+            data-tooltip="The chime starts quick and slows down, then stops on its own so a wrong reading can never trap you. A hidden tab has its timers slowed to roughly once a minute; the countdown stays correct anyway because it reads the clock rather than counting ticks, and the two options here make the ALARM arrive on time too."
+            data-tooltip-wide><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
+          <div class="apoz-ui-rows">
+            <label class="k" for="qett-alarm-volume">Volume</label>
             <input id="qett-alarm-volume" type="range" min="0" max="100" step="5" />
-            <span id="qett-alarm-volume-out" class="qett-hint-inline"></span>
-
-            <label for="qett-alarm-first">First gap</label>
-            <input id="qett-alarm-first" type="number" min="2" max="600" step="1" />
-            <span class="qett-hint-inline">s</span>
-
-            <label for="qett-alarm-max">Slowest gap</label>
-            <input id="qett-alarm-max" type="number" min="5" max="3600" step="5" />
-            <span class="qett-hint-inline">s</span>
-
-            <label for="qett-alarm-repeats">Stop after</label>
-            <input id="qett-alarm-repeats" type="number" min="1" max="999" step="1" />
-            <span class="qett-hint-inline">chimes</span>
+            <span id="qett-alarm-volume-out" class="t"></span>
           </div>
-          <div id="qett-alarm-preview" class="qett-hint-inline"></div>
-          <div class="qett-buttons qett-two">
-            <button id="qett-alarm-silence" class="qett-body-btn" type="button">Silence now</button>
-            <button id="qett-alarm-defaults" class="qett-small-btn" type="button">Defaults</button>
-          </div>
-        </div>
-
-        <div class="qett-group">
-          <div class="qett-group-label">Background<span class="qett-info-icon"
-            data-tooltip="A hidden tab has its timers slowed to roughly once a minute. The countdown stays correct anyway - it reads the clock rather than counting ticks. These two make the ALARM arrive on time too."
-            ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
           <label class="qett-check" id="qett-notify-row">
             <input id="qett-notify" type="checkbox" /><span>Desktop notification when ready</span></label>
           <label class="qett-check" id="qett-keepawake-row">
-            <input id="qett-keepawake" type="checkbox" /><span>Keep tab awake while armed</span></label>
+            <input id="qett-keepawake" type="checkbox" /><span>Keep tab awake while running</span></label>
           <div id="qett-bg-note" class="qett-hint-inline"></div>
+          <button id="qett-alarm-silence" class="apoz-ui-btn" type="button"
+            style="margin-top:var(--apoz-s3)">Silence now</button>
+          <div class="qett-adv-body" hidden>
+              <div class="apoz-ui-rows">
+                <label class="k" for="qett-alarm-first">First gap</label>
+                <input id="qett-alarm-first" type="number" min="2" max="600" step="1" />
+                <span class="t">s</span>
+                <label class="k" for="qett-alarm-growth">Growth</label>
+                <input id="qett-alarm-growth" type="number" min="1" max="4" step="0.05" />
+                <span class="t">×</span>
+                <label class="k" for="qett-alarm-max">Ceiling</label>
+                <input id="qett-alarm-max" type="number" min="5" max="3600" step="5" />
+                <span class="t">s</span>
+                <label class="k" for="qett-alarm-repeats">Stop after</label>
+                <input id="qett-alarm-repeats" type="number" min="1" max="999" step="1" />
+                <span class="t">×</span>
+              </div>
+              <div id="qett-alarm-preview" class="qett-hint-inline"></div>
+              <div class="qett-buttons qett-two">
+                <span></span>
+                <button id="qett-alarm-defaults" class="apoz-ui-btn" type="button">Defaults</button>
+              </div>
+          </div>
         </div>
 
-        <div class="qett-group">
-          <div class="qett-group-label">Custom ETA<span class="qett-info-icon"
+        <div class="apoz-ui-group">
+          <div class="apoz-ui-group-label">Custom ETA<span class="qett-info-icon"
             data-tooltip="Overrides the auto-grabbed rate for a hypothetical estimate. Press Auto to go back to automatic."
             ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
           <div class="qett-setter">
             <input id="qett-gold-rate" type="text" placeholder="e.g. 12,34 (B/action)" />
-            <button id="qett-gold-rate-set" class="qett-small-btn" type="button">Set</button>
-            <button id="qett-gold-rate-auto" class="qett-small-btn" type="button">Auto</button>
+            <button id="qett-gold-rate-set" class="apoz-ui-btn" type="button">Set</button>
+            <button id="qett-gold-rate-auto" class="apoz-ui-btn" type="button">Auto</button>
           </div>
         </div>
     `;
@@ -1359,6 +1518,7 @@
     ui.alarmFirst = content.querySelector('#qett-alarm-first');
     ui.alarmMax = content.querySelector('#qett-alarm-max');
     ui.alarmRepeats = content.querySelector('#qett-alarm-repeats');
+    ui.alarmGrowth = content.querySelector('#qett-alarm-growth');
     ui.alarmPreview = content.querySelector('#qett-alarm-preview');
 
     function readAlarmSettings() {
@@ -1372,10 +1532,15 @@
       // A slowest-gap below the first gap would make the cadence run backwards.
       if (alarmCfg.maxMs < alarmCfg.firstMs) alarmCfg.maxMs = alarmCfg.firstMs;
       alarmCfg.maxRepeats = Math.round(num(ui.alarmRepeats, 1, 999, 25));
+      // Exposed for the first time. It always drove the curve between the two
+      // gap fields (nextAlarmGap multiplies by it per repeat); with no control
+      // for it, "first gap" and "ceiling" were two ends of a shape you could
+      // not see. 1 means a flat cadence, which is a legitimate choice.
+      alarmCfg.growth = num(ui.alarmGrowth, 1, 4, ALARM_DEFAULTS.growth);
       saveProgress();
       renderAlarmSettings();
     }
-    for (const el of [ui.alarmVolume, ui.alarmFirst, ui.alarmMax, ui.alarmRepeats]) {
+    for (const el of [ui.alarmVolume, ui.alarmFirst, ui.alarmMax, ui.alarmRepeats, ui.alarmGrowth]) {
       el.addEventListener('change', readAlarmSettings);
     }
     ui.alarmVolume.addEventListener('input', () => {
@@ -1384,12 +1549,14 @@
     content.querySelector('#qett-alarm-silence').addEventListener('click', () => {
       silenceAlarm();
       Core.toast('Alarm silenced.', { type: 'success', duration: 3000 });
+      say('stopped', 'Alarm silenced.');
       render();
     });
     content.querySelector('#qett-alarm-defaults').addEventListener('click', () => {
       alarmCfg = Object.assign({}, ALARM_DEFAULTS);
       renderAlarmSettings();
       saveProgress();
+      say('done', 'Alarm cadence reset to defaults.');
     });
 
     ui.goldRateInput = content.querySelector('#qett-gold-rate');
@@ -1397,7 +1564,9 @@
     ui.goldRateAutoBtn = content.querySelector('#qett-gold-rate-auto');
 
     ui.startBtn.addEventListener('click', startTracking);
-    ui.stopBtn.addEventListener('click', stopTracking);
+    // Wrapped, not passed directly: stopTracking's first argument is the
+    // end REASON, and handing it a click Event would print one into the strip.
+    ui.stopBtn.addEventListener('click', () => stopTracking());
     ui.resetBtn.addEventListener('click', resetSession);
 
     ui.durationSetBtn.addEventListener('click', commitDuration);
@@ -1426,16 +1595,39 @@
     // Chrome (drag, resize, close button, geometry persistence) is Core's job
     // now — createWindow replaces the resize-toggle button and the hand-rolled
     // makeDraggable/saveWindowGeometry pair that used to live here.
+    // The cadence block is built with the panel (so its ids resolve and every
+    // listener above is already attached) and then handed to the Settings
+    // pane, which ADOPTS the same node. Re-parenting rather than rebuilding is
+    // what keeps one set of inputs: two copies would drift the moment one was
+    // edited while the other was on screen.
+    cadenceNode = content.querySelector('.qett-adv-body');
+    const advLink = content.querySelector('#qett-advanced-link');
+    if (advLink) {
+      advLink.addEventListener('click', () => {
+        if (typeof Core.openSettings === 'function') Core.openSettings(MODULE_ID);
+        else say('refused', 'This Core is too old to open module settings — update Core.');
+      });
+    }
+
+    // THE ACTIVITY STRIP (Core v11). Guarded, because an older Core beneath a
+    // newer module is a state real users reach — and this module degrades to
+    // exactly what it did before if the API is absent, rather than throwing.
+    if (Core.ui && typeof Core.ui.activity === 'function') {
+      activity = Core.ui.activity({ name: MODULE_ID, max: 6 });
+      content.appendChild(activity.el);
+    }
+
     migrateWindowGeometryOnce();
     windowHandle = Core.createWindow({
       id: MODULE_ID,
       title: 'Combat Slot ETA Tracker',
       resizable: true,
-      // Tall enough by default for all 4 content groups (hero, Alarm, Alarm
-      // settings, Background, Custom ETA) without needing an immediate
-      // resize — the old fixed-CSS panel only fit this by being taller than
-      // its stated 360px minimum ever actually allowed in practice.
-      minSize: { w: 300, h: 620 },
+      // Sized for the groups that are actually expanded on open: answer,
+      // Session, Progress, Alarm, Custom ETA, plus the activity strip. The
+      // cadence fields no longer count toward this — they sit behind a
+      // collapsed disclosure — which is most of why this came down from 620.
+      minSize: { w: 320, h: 560 },
+      settingsTab: MODULE_ID,
       content,
       onClose: () => togglePanel(false),
     });
@@ -1542,6 +1734,27 @@
     // the registration and says which version is needed, instead of the module
     // half-working and failing somewhere unrelated. See DISTRIBUTION.md §1.2.
     needsCore: 6, // v6: migrated onto Core.createWindow/Core.ui.* — see buildPanelContent()
+    // Its own pane in Core's shared Settings window (v11). render() is called
+    // once, the first time the tab is opened — which is also the first moment
+    // the panel is guaranteed to have been built, so the node exists to adopt.
+    settings: {
+      label: 'ETA Tracker',
+      render(container) {
+        const head = document.createElement('div');
+        head.className = 'apoz-settings-cat';
+        head.textContent = 'Alarm cadence';
+        container.appendChild(head);
+        if (cadenceNode) {
+          cadenceNode.hidden = false;
+          container.appendChild(cadenceNode);
+        } else {
+          const note = document.createElement('div');
+          note.className = 'qett-hint-inline';
+          note.textContent = 'Open the ETA Tracker window once to load these.';
+          container.appendChild(note);
+        }
+      },
+    },
     // enabling in the dropdown just adds the quick button - it does NOT open
     // the window; disabling always force-closes it though
     // D1 — disabling must DISARM, not just hide. Hiding the panel while the

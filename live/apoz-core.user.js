@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.9.0
+// @version      6.10.0
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.9.0",
+    "version": "6.10.0",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -165,6 +165,83 @@
         // the liveAdaptTheme setting.
         root.style.setProperty(`--apoz-solid-${key}`, THEME_SNAPSHOT[key]);
       }
+      injectTokenStyleOnce();
+    }
+
+    // ---- the scale layer (DESIGN.md §2, values picked 2026-09-08) ----
+    //
+    // Core tokenised COLOR and nothing else, so size, spacing and emphasis were
+    // literals at every call site and consistency between two modules depended
+    // on the second author remembering what the first one typed. It did not
+    // hold — that is the whole of the "these look like different products"
+    // report. `userscripts/tests/design-tokens.mjs` measures the remaining
+    // drift as a ratchet and prints the count; nothing states one.
+    //
+    // These are constants, not theme-dependent, so they live in a stylesheet
+    // rather than being written onto documentElement per theme flip. Injected
+    // from applyThemeMode() because that is the one function BOTH entry points
+    // (injectWindowStyleOnce, buildUi) already call before styling anything.
+    //
+    // Two of the roundings are role decisions rather than nearest-neighbour,
+    // and both favour the data: 11.5px split, with table cells and menu items
+    // going UP to --apoz-fs-body because they carry what you came to read, and
+    // labels going DOWN to --apoz-fs-control.
+    const TOKEN_STYLE_ID = 'apoz-token-style';
+    function injectTokenStyleOnce() {
+      if (!document.head || document.getElementById(TOKEN_STYLE_ID)) return;
+      const style = document.createElement('style');
+      style.id = TOKEN_STYLE_ID;
+      style.textContent = `
+        :root {
+          /* type */
+          --apoz-fs-micro: 9px;    /* section labels, version tags */
+          --apoz-fs-caption: 10px; /* table headers, tooltips */
+          --apoz-fs-control: 11px; /* buttons, field labels */
+          --apoz-fs-body: 12px;    /* window base, table cells, menu items */
+          --apoz-fs-title: 13px;   /* window and modal titles */
+          --apoz-fs-display: 24px; /* the ONE number a window exists to show */
+          /* space */
+          --apoz-s1: 2px; --apoz-s2: 4px; --apoz-s3: 6px;
+          --apoz-s4: 8px; --apoz-s5: 12px; --apoz-s6: 16px;
+          /* radius: controls / containers / windows */
+          --apoz-r-sm: 4px; --apoz-r-md: 6px; --apoz-r-lg: 8px;
+          /* emphasis — four levels, because hierarchy carried by fourteen
+             opacities is why the overlay read flat: everything was the same
+             colour at a different strength, so nothing was ever foreground */
+          --apoz-em-strong: 1; --apoz-em-normal: .85;
+          --apoz-em-muted: .55; --apoz-em-faint: .4;
+          /* semantic — meaning, not appearance. Muted variants are DERIVED
+             (color-mix against the token), never hand-picked: two ambers one
+             digit apart shipped for months because there was no token to
+             point at. */
+          --apoz-danger: var(--apoz-danger); --apoz-warn: var(--apoz-warn); --apoz-success: var(--apoz-success);
+          /* the label column every label/value grid shares, so sibling groups
+             align with each OTHER and not merely within themselves (§4) */
+          --apoz-label-col: 92px;
+          --apoz-font: ${CORE_FONT};
+        }
+        /* One template for every label/value list in a window. The value
+           column is ALWAYS left-aligned and the trailing unit column is a
+           fixed ch width, so a readout that gains a digit cannot resize the
+           control beside it — the mechanism behind the reported alarm drift. */
+        .apoz-ui-rows { display: grid; align-items: center; gap: var(--apoz-s3) var(--apoz-s4);
+          grid-template-columns: var(--apoz-label-col) minmax(0, 1fr) 4.5ch;
+          font-size: var(--apoz-fs-control); }
+        .apoz-ui-rows > .k { opacity: var(--apoz-em-muted); }
+        .apoz-ui-rows > .v { opacity: var(--apoz-em-normal); font-variant-numeric: tabular-nums; }
+        .apoz-ui-rows > .t { text-align: right; opacity: var(--apoz-em-muted);
+          font-variant-numeric: tabular-nums; }
+        .apoz-ui-rows > .wide { grid-column: 1 / -1; }
+        .apoz-ui-rows input, .apoz-ui-rows select { font: inherit;
+          font-size: var(--apoz-fs-control); background: var(--apoz-input);
+          color: var(--apoz-foreground); border: 1px solid var(--apoz-border);
+          border-radius: var(--apoz-r-sm); padding: var(--apoz-s1) var(--apoz-s2);
+          width: 100%; box-sizing: border-box; font-variant-numeric: tabular-nums; }
+        /* Any digits that sit in a column line up. Without this a countdown
+           reflows on every tick, because digit glyphs are not equal width. */
+        .apoz-num { font-variant-numeric: tabular-nums; }
+      `;
+      document.head.appendChild(style);
     }
 
     // ---- number format — shared, because every module must parse identically ----
@@ -983,9 +1060,14 @@
           cursor: move; user-select: none; flex: none; }
         .apoz-window-title { font-weight: 600; font-size: 12px; flex: 1; overflow: hidden;
           text-overflow: ellipsis; white-space: nowrap; }
-        .apoz-window-close { background: none; border: none; color: inherit; opacity: .6; cursor: pointer;
+        .apoz-window-close { background: none; border: none; color: inherit;
+          opacity: var(--apoz-em-muted); cursor: pointer;
           font-size: 16px; line-height: 1; padding: 0 3px; }
         .apoz-window-close:hover { opacity: 1; }
+        .apoz-window-gear { background: none; border: none; color: inherit;
+          opacity: var(--apoz-em-faint); cursor: pointer; font-size: var(--apoz-fs-body);
+          line-height: 1; padding: 0 3px; }
+        .apoz-window-gear:hover { opacity: 1; }
         .apoz-window-body { flex: 1; overflow: auto; padding: 10px 11px;
           display: flex; flex-direction: column; gap: 10px; }
         .apoz-ui-input-row { display: grid; grid-template-columns: minmax(88px,1fr) minmax(0,1.5fr);
@@ -1005,7 +1087,7 @@
         .apoz-ui-btn { background: var(--apoz-input); border: 1px solid var(--apoz-border); border-radius: 4px;
           color: var(--apoz-foreground); font: inherit; font-size: 11px; padding: 3px 8px; cursor: pointer; }
         .apoz-ui-btn:hover { background: var(--apoz-popover); }
-        .apoz-ui-btn-danger { color: #e0483e; border-color: color-mix(in srgb, #e0483e 55%, var(--apoz-border)); }
+        .apoz-ui-btn-danger { color: var(--apoz-danger); border-color: color-mix(in srgb, var(--apoz-danger) 55%, var(--apoz-border)); }
         .apoz-ui-btn-primary { background: var(--apoz-primary); color: var(--apoz-primary-foreground);
           border: 1px solid var(--apoz-primary); font-weight: 600; }
         .apoz-ui-btn-primary:hover { filter: brightness(1.08); }
@@ -1037,7 +1119,92 @@
         .apoz-ui-modal-title { font-weight: 700; font-size: 13px; margin-bottom: 8px; }
         .apoz-ui-modal-msg { opacity: .85; line-height: 1.4; margin-bottom: 14px; white-space: pre-wrap; }
         .apoz-ui-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
-        .apoz-ui-group { border: 1px solid var(--apoz-border); border-radius: 6px; padding: 8px 10px; }
+        /* ---- Settings: fixed sidebar, panes, and the save model ---- */
+        .apoz-settings { display: flex; margin: -10px -11px; min-height: 100%; }
+        .apoz-settings-side { flex: none; width: 112px; padding: var(--apoz-s3);
+          border-right: 1px solid var(--apoz-border); display: flex; flex-direction: column;
+          gap: var(--apoz-s1); background: color-mix(in srgb, var(--apoz-card) 94%, #000); }
+        .apoz-settings-side-h { font-size: var(--apoz-fs-micro); text-transform: uppercase;
+          letter-spacing: .05em; opacity: var(--apoz-em-faint); padding: var(--apoz-s3) 7px var(--apoz-s1); }
+        .apoz-settings-side-i { background: none; border: none; color: inherit; font: inherit;
+          font-size: var(--apoz-fs-control); text-align: left; padding: var(--apoz-s2) 7px;
+          border-radius: var(--apoz-r-sm); opacity: var(--apoz-em-muted); cursor: pointer;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .apoz-settings-side-i:hover { opacity: var(--apoz-em-normal); background: var(--apoz-input); }
+        .apoz-settings-side-i.on { opacity: 1; background: var(--apoz-input); font-weight: 600; }
+        .apoz-settings-panes { flex: 1; min-width: 0; padding: 10px 11px; }
+        .apoz-settings-pane { display: flex; flex-direction: column; gap: var(--apoz-s4); }
+        .apoz-settings-cat { font-size: var(--apoz-fs-micro); text-transform: uppercase;
+          letter-spacing: .05em; opacity: var(--apoz-em-muted);
+          border-bottom: 1px solid color-mix(in srgb, var(--apoz-border) 60%, transparent);
+          padding-bottom: 3px; margin-top: var(--apoz-s3); }
+        .apoz-settings-pane > .apoz-settings-cat:first-child { margin-top: 0; }
+
+        /* SAVE MODEL: the split is whether the change PREVIEWS ITSELF.
+           A theme change is its own confirmation — putting a Save button in
+           front of it asks you to confirm what you can already see — so
+           previewable settings apply live and acknowledge quietly here.
+           A job-host address is the opposite: it means nothing until the token
+           beside it is right, and it was being persisted on every keystroke,
+           so a half-typed URL was your stored configuration. That group gets a
+           real Save. The rule follows the setting, not the window. */
+        .apoz-settings-savebar { display: flex; align-items: center; gap: var(--apoz-s4);
+          margin-top: var(--apoz-s4); padding-top: var(--apoz-s4);
+          border-top: 1px solid var(--apoz-border); font-size: var(--apoz-fs-control); }
+        .apoz-settings-savebar-label { color: var(--apoz-warn); }
+        .apoz-settings-applied { font-size: var(--apoz-fs-caption); color: var(--apoz-success);
+          opacity: 0; transition: opacity .15s ease; }
+        .apoz-settings-applied.on { opacity: 1; }
+        @media (prefers-reduced-motion: reduce) { .apoz-settings-applied { transition: none; } }
+        .apoz-ui-group { border: 1px solid var(--apoz-border); border-radius: var(--apoz-r-md);
+          padding: var(--apoz-s4) 10px; }
+        .apoz-ui-group-label { font-size: var(--apoz-fs-micro); text-transform: uppercase;
+          letter-spacing: .05em; opacity: var(--apoz-em-muted); margin-bottom: 7px;
+          display: flex; align-items: center; gap: var(--apoz-s2); }
+        .apoz-ui-group-label .apoz-ui-group-link { margin-left: auto; color: var(--apoz-primary);
+          opacity: 1; text-transform: none; letter-spacing: 0; font-size: var(--apoz-fs-caption);
+          background: none; border: none; font-family: inherit; cursor: pointer; padding: 0; }
+        .apoz-ui-group-label .apoz-ui-group-link:hover { text-decoration: underline; }
+
+        /* ---- the Answer band: AT MOST one per window (DESIGN.md §3) ----
+           At most, not exactly — a window whose subject is a table (the plans
+           list) legitimately has none, and forcing one on it invents a
+           headline out of whatever number was nearest. */
+        .apoz-ui-answer { text-align: center; padding: var(--apoz-s2) 0 var(--apoz-s1); }
+        .apoz-ui-answer-value { font-size: var(--apoz-fs-display); font-weight: 800;
+          line-height: 1.1; font-variant-numeric: tabular-nums; }
+        .apoz-ui-answer-sub { font-size: var(--apoz-fs-control); opacity: var(--apoz-em-muted); }
+
+        /* ---- activity strip ---- */
+        .apoz-ui-activity { margin: auto -11px -10px; border-top: 1px solid var(--apoz-border);
+          background: color-mix(in srgb, var(--apoz-card) 94%, #000); flex: none; }
+        .apoz-ui-activity-head { display: flex; align-items: center; gap: 7px; width: 100%;
+          padding: var(--apoz-s3) 11px; background: none; border: none; color: inherit;
+          font: inherit; font-size: var(--apoz-fs-control); text-align: left; cursor: pointer; }
+        .apoz-ui-activity-head:hover { background: var(--apoz-input); }
+        .apoz-ui-activity-g { flex: none; width: 11px; text-align: center; }
+        .apoz-ui-activity-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+          white-space: nowrap; opacity: var(--apoz-em-normal); }
+        .apoz-ui-activity-ago { flex: none; opacity: var(--apoz-em-faint); }
+        .apoz-ui-activity-chev { flex: none; opacity: var(--apoz-em-faint); font-size: var(--apoz-fs-caption); }
+        .apoz-ui-activity-list { border-top: 1px solid var(--apoz-border);
+          padding: var(--apoz-s1) 0; max-height: 132px; overflow-y: auto; }
+        .apoz-ui-activity-row { display: flex; align-items: center; gap: 7px;
+          padding: 3px 11px; font-size: var(--apoz-fs-control); }
+        .apoz-ui-lvl-done { color: var(--apoz-success); }
+        .apoz-ui-lvl-busy { color: var(--apoz-primary); }
+        .apoz-ui-lvl-refused { color: var(--apoz-warn); }
+        .apoz-ui-lvl-failed { color: var(--apoz-danger); }
+        .apoz-ui-lvl-stopped { opacity: var(--apoz-em-faint); }
+        .apoz-ui-lvl-info { opacity: var(--apoz-em-muted); }
+
+        /* Keyboard focus was undefined anywhere in this overlay, which made
+           every control effectively mouse-only and left focus invisible
+           against the host page's own styling. One rule, at the token layer,
+           because per-control focus styling is how it gets forgotten. */
+        .apoz-window :focus-visible, .apoz-ui-menu :focus-visible,
+        .apoz-ui-modal :focus-visible { outline: 2px solid var(--apoz-primary);
+          outline-offset: 1px; border-radius: var(--apoz-r-sm); }
       `;
       document.head.appendChild(style);
     }
@@ -1107,13 +1274,30 @@
     // outranks every window, including an always-on-top one.** A window can be
     // pinned above its siblings; nothing can be pinned above the thing asking
     // whether to destroy something.
+    //  1002500  tooltips                   — above everything, because a
+    //                                        tooltip sits under the cursor and
+    //                                        explains whatever is topmost
+    //
+    // COMPLETED 2026-09-08. The list above said "declared once" while three
+    // z-index literals in shipped CSS were in no band at all: the dropdown's
+    // 999501, the tooltip's 1002500, and — in a MODULE, which is worse,
+    // because a module inventing a number inside Core's ranges is exactly what
+    // the band system exists to prevent — eta-tracker's own tooltip at
+    // 1000002, which put it UNDER menus and modals. A declared order with
+    // undeclared members is the same "nudge one number and hope" trap the
+    // original stacking bug came from, so every literal is now a named band
+    // and `userscripts/tests/design-tokens.mjs` fails when a new one appears.
     const Z = Object.freeze({
       window: 999000,
       chrome: 999500,
+      // Belongs to the chrome band but must clear the group button that opens
+      // it — the one deliberate +1 in this table.
+      chromePopover: 999501,
       windowOnTop: 1000000,
       menu: 1000500,
       modal: 1001000,
       toast: 1002000,
+      tooltip: 1002500,
     });
     let topZIndex = Z.window;
     let topZIndexOnTop = Z.windowOnTop;
@@ -1171,6 +1355,22 @@
       closeBtn.textContent = '×';
       closeBtn.title = 'Close';
       header.appendChild(title);
+      // spec.settingsTab: this module's own pane id. Rendered only when one is
+      // asked for, because a gear that opens an empty tab is worse than no
+      // gear — and it sits BEFORE the close button so the destructive control
+      // stays in the corner where every window has trained you to expect it.
+      if (spec.settingsTab) {
+        const gear = document.createElement('button');
+        gear.type = 'button';
+        gear.className = 'apoz-window-gear';
+        gear.textContent = '⚙';
+        gear.title = 'Settings for this module';
+        gear.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openSettingsWindow(spec.settingsTab);
+        });
+        header.appendChild(gear);
+      }
       header.appendChild(closeBtn);
 
       const body = document.createElement('div');
@@ -1463,7 +1663,7 @@
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'apoz-ui-menu-item';
-          if (item.danger) btn.style.color = '#e0483e';
+          if (item.danger) btn.style.color = 'var(--apoz-danger)';
           btn.textContent = item.label;
           btn.addEventListener('click', (e) => { e.stopPropagation(); close(); item.onClick(); });
           el.appendChild(btn);
@@ -1508,6 +1708,154 @@
       flushWrites() { scheduler.flushNow(); },
       get writeStats() { return scheduler.stats; },
       dom: domWrite,
+      // ---- the activity strip (DESIGN.md §5) ----
+      //
+      // One line at the foot of a module window saying what the module last
+      // did, expandable to the recent history. This is the UI half of the
+      // feedback contract, and it exists because of a specific shipped bug:
+      // the World Boss archive detector returns null on no-match, the caller's
+      // `if` is false, and NOTHING is written, logged or shown — so a user
+      // cannot tell "this page had no boss level" from "this has never once
+      // worked", which is exactly why it was still unverified after shipping.
+      //
+      // Five levels, and the level carries the meaning rather than being
+      // decoration: `done` names what it produced AND how much; `refused` says
+      // which input was absent (absence IS the message — §9.4's "refuse rather
+      // than guess" told the code to return null, this tells the user);
+      // `failed` names the mismatch, never just "error"; `stopped` is the user
+      // ending it and is deliberately not a failure.
+      //
+      // THE INVARIANT: a `busy` entry is always resolved. busy() hands back
+      // the only handle that can write its closing line, and opening a second
+      // busy removes the first rather than leaving it hanging — so "started
+      // something and silently stopped existing" is not a reachable state.
+      // Disposing with one still open logs it, because that is a module bug.
+      //
+      // {scope?, max?} -> {el, done, refused, failed, stopped, info, busy, clear, dispose}
+      activity(spec) {
+        injectWindowStyleOnce();
+        spec = spec || {};
+        const max = spec.max == null ? 6 : spec.max;
+        const entries = [];       // newest first
+        let openBusy = null;
+        let expanded = false;
+
+        const el = document.createElement('div');
+        el.className = 'apoz-ui-activity';
+        const head = document.createElement('button');
+        head.type = 'button';
+        head.className = 'apoz-ui-activity-head';
+        const glyph = document.createElement('span');
+        glyph.className = 'apoz-ui-activity-g';
+        const text = document.createElement('span');
+        text.className = 'apoz-ui-activity-t';
+        const ago = document.createElement('span');
+        ago.className = 'apoz-ui-activity-ago apoz-num';
+        const chev = document.createElement('span');
+        chev.className = 'apoz-ui-activity-chev';
+        chev.textContent = '⌃';
+        for (const n of [glyph, text, ago, chev]) head.appendChild(n);
+        const list = document.createElement('div');
+        list.className = 'apoz-ui-activity-list';
+        list.hidden = true;
+        el.appendChild(head); el.appendChild(list);
+
+        const GLYPH = { done: '✓', busy: '⋯', refused: '!', failed: '✕', stopped: '■', info: '·' };
+
+        // Relative, from a stored timestamp — never a counter incremented per
+        // tick. A hidden tab clamps timers to about once a minute, so anything
+        // accumulated is wrong by the time you look at it (INSTRUMENTATION §4.4).
+        function agoText(atMs) {
+          const s = Math.max(0, Math.round((Date.now() - atMs) / 1000));
+          if (s < 60) return s + 's';
+          if (s < 3600) return Math.round(s / 60) + 'm';
+          return Math.round(s / 3600) + 'h';
+        }
+
+        function render() {
+          const top = entries[0];
+          domWrite.text(glyph, top ? GLYPH[top.level] : '');
+          domWrite.attr(glyph, 'class', 'apoz-ui-activity-g apoz-ui-lvl-' + (top ? top.level : 'info'));
+          domWrite.text(text, top ? top.text : 'Nothing yet.');
+          domWrite.text(ago, top ? agoText(top.atMs) : '');
+          domWrite.attr(chev, 'style', 'transform:rotate(' + (expanded ? 180 : 0) + 'deg)');
+          if (!expanded) { list.hidden = true; return; }
+          list.hidden = false;
+          // Rebuilt rather than diffed: at most `max` rows, only while open.
+          list.innerHTML = '';
+          for (const e of entries) {
+            const row = document.createElement('div');
+            row.className = 'apoz-ui-activity-row';
+            const g = document.createElement('span');
+            g.className = 'apoz-ui-activity-g apoz-ui-lvl-' + e.level;
+            g.textContent = GLYPH[e.level];
+            const t = document.createElement('span');
+            t.className = 'apoz-ui-activity-t';
+            t.textContent = e.text;
+            t.title = e.text;
+            const a = document.createElement('span');
+            a.className = 'apoz-ui-activity-ago apoz-num';
+            a.textContent = agoText(e.atMs);
+            for (const n of [g, t, a]) row.appendChild(n);
+            list.appendChild(row);
+          }
+        }
+        const paint = () => ui.write('apoz-activity-' + (spec.name || entries.length), render);
+
+        function push(level, msg) {
+          entries.unshift({ level, text: String(msg), atMs: Date.now() });
+          while (entries.length > max) entries.pop();
+          paint();
+        }
+        function closeBusy(level, msg) {
+          if (openBusy && entries[0] === openBusy) entries.shift();
+          openBusy = null;
+          push(level, msg);
+        }
+
+        head.addEventListener('click', () => { expanded = !expanded; render(); });
+
+        const handle = {
+          el,
+          done: (m) => push('done', m),
+          refused: (m) => push('refused', m),
+          failed: (m) => push('failed', m),
+          stopped: (m) => push('stopped', m),
+          info: (m) => push('info', m),
+          busy(m) {
+            // A second busy replaces the first rather than stacking, so the
+            // strip can never show two things in flight when one of them was
+            // abandoned. The stale handle's methods become no-ops.
+            if (openBusy && entries[0] === openBusy) entries.shift();
+            const mine = { level: 'busy', text: String(m), atMs: Date.now() };
+            entries.unshift(mine);
+            while (entries.length > max) entries.pop();
+            openBusy = mine;
+            paint();
+            const live = () => openBusy === mine;
+            return {
+              done: (t) => { if (live()) closeBusy('done', t); },
+              refused: (t) => { if (live()) closeBusy('refused', t); },
+              failed: (t) => { if (live()) closeBusy('failed', t); },
+              stopped: (t) => { if (live()) closeBusy('stopped', t); },
+              update: (t) => { if (live()) { mine.text = String(t); paint(); } },
+            };
+          },
+          clear() { entries.length = 0; openBusy = null; paint(); },
+          dispose() {
+            if (openBusy) console.warn('[ApozCore] activity strip disposed with "' + openBusy.text + '" still in flight — that is a module bug: every busy() must be resolved.');
+            if (tick) clearInterval(tick);
+          },
+        };
+
+        // Ages go stale silently, which is the one way this component could
+        // lie. Cheap: one interval, one frame-batched write, and only the
+        // relative-time text can change.
+        const tick = setInterval(paint, 15000);
+        if (spec.scope && typeof spec.scope.add === 'function') spec.scope.add(() => handle.dispose());
+        render();
+        return handle;
+      },
       // {label, type?, value?, options?:[{value,label}], onChange?(value), info?} -> row element,
       // with row._input left as an escape hatch for a caller that needs to read/focus it later.
       inputRow(spec) {
@@ -1559,22 +1907,47 @@
         #apoz-core-btn:hover { background: var(--apoz-input); }
         #apoz-core-quick-row { display: flex; }
         .apoz-core-quick-btn { background: none; border: none; border-left: 1px solid var(--apoz-border);
-          color: var(--apoz-foreground); opacity: .45; padding: 0 7px; cursor: pointer; font-size: 11px;
-          height: 100%; font-weight: 500; position: relative; -webkit-font-smoothing: antialiased;
-          transition: opacity .1s ease, color .1s ease; }
+          color: var(--apoz-foreground); opacity: var(--apoz-em-faint); padding: 0 7px; cursor: pointer;
+          font-size: var(--apoz-fs-control); height: 100%; font-weight: 500; position: relative;
+          display: inline-flex; align-items: center; gap: 5px;
+          -webkit-font-smoothing: antialiased; transition: opacity .1s ease, color .1s ease; }
         .apoz-core-quick-btn:hover { opacity: .85; background: var(--apoz-input); }
-        /* REVISED (was an underline via inset box-shadow): reads as an on/off
-           LIGHT rather than a decoration — closed sits dim/greyed among its
-           siblings, open reads brighter/whiter, exactly the "which of these
-           do I have open right now" scan a busy row of several buttons needs,
-           without adding a filled background per-button (that got busy fast
-           with more than one or two open). */
-        .apoz-core-quick-btn-open { opacity: 1; color: var(--apoz-popover-foreground, #fff); font-weight: 700; }
+        /* OPEN IS A HUE CHANGE, NOT A BRIGHTNESS CHANGE.
+           The first version underlined via inset box-shadow, which read as
+           decoration. The second went dim-grey -> bright-white + bold; the
+           bold was the defect, because a weight change alters the text's
+           WIDTH, so opening one module nudged every button to its right — the
+           same reflow class as the alarm slider. And brightness alone tested
+           as too quiet in a nav bar that is already busy.
+           Accent-coloured text is a hue change: it survives a glance, costs no
+           layout, and visually ties the open modules to the Core button, which
+           already wears the same colour. */
+        .apoz-core-quick-btn-open { opacity: 1; color: var(--apoz-primary); }
         .apoz-core-quick-btn-open:hover { opacity: 1; }
-        @keyframes apoz-core-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
-        .apoz-core-quick-badge::after { content: ''; position: absolute; top: 1px; right: 1px;
-          width: 5px; height: 5px; border-radius: 50%; background: #e0483e;
-          animation: apoz-core-blink 1.1s ease-in-out infinite; }
+
+        /* ---- the state slot ----
+           A module reports WHAT IT IS DOING, not merely whether its window is
+           open, so the nav can answer "is my tracker still running?" without
+           opening anything. Deliberately a slot rather than a dot: a state may
+           render as a filled dot or as a glyph, so a level like "attention"
+           can show "!" where a colour alone would not carry it.
+           DISABLED AND IDLE MUST NOT LOOK ALIKE. An off module is HOLLOW (a
+           ring, no fill); an idle one is FILLED and muted. Same size, opposite
+           construction — the one distinction a greyed-dot-for-both loses. */
+        .apoz-core-sd { width: 6px; height: 6px; border-radius: 50%; flex: none;
+          background: currentColor; opacity: .45; display: inline-flex;
+          align-items: center; justify-content: center;
+          font-weight: 700; line-height: 1; font-style: normal; }
+        .apoz-core-sd-off { background: none; box-shadow: inset 0 0 0 1px currentColor; opacity: .4; }
+        .apoz-core-sd-idle { opacity: .45; }
+        .apoz-core-sd-running { background: var(--apoz-primary); opacity: 1; }
+        .apoz-core-sd-attention { background: none; color: var(--apoz-warn); opacity: 1;
+          width: auto; height: auto; font-size: var(--apoz-fs-caption);
+          animation: apoz-core-blink 1.4s ease-in-out infinite; }
+        .apoz-core-sd-problem { background: none; color: var(--apoz-danger); opacity: 1;
+          width: auto; height: auto; font-size: var(--apoz-fs-caption); }
+        @keyframes apoz-core-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+        @media (prefers-reduced-motion: reduce) { .apoz-core-sd-attention { animation: none; } }
         #apoz-core-dropdown { position: fixed; z-index: 999501; background: var(--apoz-card);
           color: var(--apoz-popover-foreground); border: 2px solid var(--apoz-border); border-radius: 6px;
           min-width: 220px; box-shadow: 0 8px 24px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.04);
@@ -1623,14 +1996,28 @@
         [data-tooltip][data-tooltip-right]::after { left: auto; right: 0; }
         [data-tooltip]:hover::after { display: block; }
         .apoz-core-separator { height: 1px; background: var(--apoz-border); margin: 6px 2px; }
-        .apoz-core-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 5px;
-          cursor: pointer; }
+        /* A GRID, NOT A FLEX ROW — the alignment contract (DESIGN.md §4)
+           applies here too. With flex, every row sized its own name column, so
+           the state text landed at a different x on each line and the rows
+           read as floating rather than as one list. Three shared columns fix
+           the indicator, the name and the state to the same positions down the
+           whole list. Padding also came down from 6px to 4px vertical: the old
+           spacing separated rows that belong together. */
+        .apoz-core-row { display: grid; grid-template-columns: 10px minmax(0,1fr) auto;
+          align-items: center; gap: var(--apoz-s4); padding: var(--apoz-s2) 7px;
+          border-radius: var(--apoz-r-sm); cursor: pointer; }
         .apoz-core-row:hover { background: var(--apoz-input); }
-        .apoz-core-row-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #e0483e; }
-        .apoz-core-row-enabled .apoz-core-row-dot { background: #3ecf6a; }
+        .apoz-core-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .apoz-core-row-state { font-size: var(--apoz-fs-caption); opacity: var(--apoz-em-muted);
+          font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .apoz-core-row-state-live { color: var(--apoz-warn); opacity: 1; }
         .apoz-core-row-enabled { font-weight: 600; }
-        .apoz-core-row-ver { margin-left: 6px; font-size: 9px; opacity: .45; font-weight: 400; }
-        .apoz-core-row:not(.apoz-core-row-enabled) { opacity: .55; }
+        /* DISABLED IS NOT DIM-ENABLED. A module that is off is struck from the
+           list visually — lower opacity AND a hollow indicator AND its state
+           column reading "off" — because "greyed" alone is the same signal an
+           idle-but-enabled module gives, and those are different things. */
+        .apoz-core-row:not(.apoz-core-row-enabled) { opacity: var(--apoz-em-muted); }
+        .apoz-core-row:not(.apoz-core-row-enabled) .apoz-core-row-name { font-style: italic; }
         /* Revealed on hover only — a row you're not looking at shouldn't
            carry an extra button's worth of visual noise. */
         .apoz-core-row-update-btn { display: none; margin-left: auto; background: var(--apoz-primary);
@@ -1656,6 +2043,8 @@
         .apoz-core-self-update-btn { background: none; border: none; color: var(--apoz-primary);
           font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; padding: 0; }
         .apoz-core-self-update-btn:hover { text-decoration: underline; }
+        .apoz-core-update-ok { color: var(--apoz-success); opacity: 1; }
+        .apoz-core-update-warn { color: var(--apoz-warn); opacity: 1; }
         #apoz-core-toasts { position: fixed; right: 14px; bottom: 14px; z-index: 1002000;
           display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
           pointer-events: none; font: 12px ${CORE_FONT}; }
@@ -1666,9 +2055,9 @@
           opacity: 0; transform: translateY(6px); transition: opacity .18s, transform .18s; }
         .apoz-core-toast.apoz-core-toast-in { opacity: 1; transform: none; }
         .apoz-core-toast-info { border-left-color: var(--apoz-primary); }
-        .apoz-core-toast-success { border-left-color: #3ecf6a; }
-        .apoz-core-toast-warn { border-left-color: #e0a23e; }
-        .apoz-core-toast-error { border-left-color: #e0483e; }
+        .apoz-core-toast-success { border-left-color: var(--apoz-success); }
+        .apoz-core-toast-warn { border-left-color: var(--apoz-warn); }
+        .apoz-core-toast-error { border-left-color: var(--apoz-danger); }
         .apoz-core-toast-msg { flex: 1; line-height: 1.35; }
         .apoz-core-toast-action { background: var(--apoz-primary); color: var(--apoz-primary-foreground);
           border: none; border-radius: 4px; font: inherit; font-size: 11px; font-weight: 600;
@@ -1724,8 +2113,8 @@
             ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8A5 5 0 1 1 11.3 4.5"/><path d="M13 3.2v3.3h-3.3"/></svg></button>
         </div>
         <div class="apoz-core-version-row">
-          <span id="apoz-core-self-update"></span>
-          <span id="apoz-core-self-ver" style="margin-left:auto"></span>
+          <span id="apoz-core-self-ver"></span>
+          <span id="apoz-core-self-update" style="margin-left:auto"></span>
         </div>
       `;
       document.body.appendChild(dropdown);
@@ -1948,13 +2337,29 @@
       for (let i = 0; i < shown.length; i++) {
         const mod = modules[shown[i]];
         const btn = coreUi.quickRow.children[i];
-        const cls = 'apoz-core-quick-btn'
-          + (mod.badge ? ' apoz-core-quick-badge' : '')
-          + (mod.open ? ' apoz-core-quick-btn-open' : '');
+        const cls = 'apoz-core-quick-btn' + (mod.open ? ' apoz-core-quick-btn-open' : '');
         if (btn.className !== cls) btn.className = cls;
-        const text = mod.shortLabel || mod.label;
-        if (btn.textContent !== text) btn.textContent = text;
-        if (btn.title !== mod.label) btn.title = mod.label;
+        // Two independent signals, on purpose: the ACCENT says the window is
+        // open, the SLOT says what the module is doing. They are different
+        // questions and conflating them into one treatment was why the old
+        // badge could only ever mean "something, somewhere".
+        const st = mod.enabled ? (mod.state || 'idle') : 'off';
+        const slotCls = 'apoz-core-sd apoz-core-sd-' + st;
+        // Built once, updated in place. `children` rather than
+        // firstElementChild/lastElementChild deliberately: those are the
+        // properties the test DOM stub does not implement, and a render path
+        // that only works in a real browser is a render path nothing tests.
+        if (!btn.children[0]) btn.appendChild(document.createElement('i'));
+        if (!btn.children[1]) btn.appendChild(document.createElement('span'));
+        const slot = btn.children[0];
+        const text = btn.children[1];
+        if (slot.className !== slotCls) slot.className = slotCls;
+        const glyph = STATE_GLYPH[st] || '';
+        if (slot.textContent !== glyph) slot.textContent = glyph;
+        const label = mod.shortLabel || mod.label;
+        if (text.textContent !== label) text.textContent = label;
+        const tip = mod.label + (mod.enabled ? ' — ' + stateText(mod) : ' — off');
+        if (btn.title !== tip) btn.title = tip;
       }
     }
 
@@ -2089,7 +2494,7 @@
       if (jobsScope) { jobsScope.dispose(); jobsScope = null; }
     }
 
-    function openSettingsWindow() {
+    function openSettingsWindow(tabId) {
       if (!settingsHandle) {
         settingsHandle = createWindow({
           // Deliberately NOT resizable: a settings panel's job is to lay out
@@ -2097,18 +2502,82 @@
           // is sized to fit within this, and the body only scrolls once a
           // future tab genuinely overflows it.
           id: 'apoz-core-settings', title: 'Apoz Core Settings',
-          resizable: false, minSize: { w: 460, h: 560 },
+          resizable: false, minSize: { w: 580, h: 560 },
         });
         settingsUi = buildSettingsContent();
         settingsHandle.setContent(settingsUi.root);
       }
       settingsUi.renderNumberFormat();
       settingsUi.renderHostStatus();
+      if (tabId && typeof settingsUi.selectTab === 'function') settingsUi.selectTab(tabId);
       settingsHandle.open();
     }
 
     function buildSettingsContent() {
+      // A FIXED LABELLED SIDEBAR, not a hover-expanding icon rail. The rail
+      // was what was asked for and it is the wrong shape for THIS window: at
+      // 460px wide and deliberately non-resizable, a rail spends its expansion
+      // covering the pane it is meant to navigate. Words also survive a fourth
+      // and fifth module, where invented per-module glyphs do not.
       const root = document.createElement('div');
+      root.className = 'apoz-settings';
+      const side = document.createElement('div');
+      side.className = 'apoz-settings-side';
+      const paneHost = document.createElement('div');
+      paneHost.className = 'apoz-settings-panes';
+      root.appendChild(side);
+      root.appendChild(paneHost);
+
+      const tabs = [];
+      let activeTabId = null;
+      function addTab(id, label, group) {
+        const pane = document.createElement('div');
+        pane.className = 'apoz-settings-pane';
+        pane.hidden = true;
+        paneHost.appendChild(pane);
+        tabs.push({ id, label, group, pane });
+        return pane;
+      }
+      function selectTab(id) {
+        const found = tabs.find((t) => t.id === id) || tabs[0];
+        if (!found) return;
+        activeTabId = found.id;
+        for (const t of tabs) t.pane.hidden = t !== found;
+        renderSide();
+      }
+      function renderSide() {
+        side.innerHTML = '';
+        let lastGroup = null;
+        for (const t of tabs) {
+          if (t.group !== lastGroup) {
+            const h = document.createElement('div');
+            h.className = 'apoz-settings-side-h';
+            h.textContent = t.group;
+            side.appendChild(h);
+            lastGroup = t.group;
+          }
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'apoz-settings-side-i' + (t.id === activeTabId ? ' on' : '');
+          b.textContent = t.label;
+          b.addEventListener('click', () => selectTab(t.id));
+          side.appendChild(b);
+        }
+      }
+
+      const paneGeneral = addTab('general', 'General', 'Core');
+      const paneJobs = addTab('jobs', 'Job host', 'Core');
+
+      // A category heading inside a pane. Distinct from a group box on
+      // purpose: the pane IS the group now, and boxing every category inside
+      // it would draw three borders around one idea.
+      function category(pane, text) {
+        const c = document.createElement('div');
+        c.className = 'apoz-settings-cat';
+        c.textContent = text;
+        pane.appendChild(c);
+        return c;
+      }
 
       // ---- number format ----
       const numGroup = document.createElement('div');
@@ -2137,7 +2606,8 @@
         return { key: opt.key, btn };
       });
       numGroup.appendChild(numBtnRow);
-      root.appendChild(numGroup);
+      category(paneGeneral, 'Numbers');
+      paneGeneral.appendChild(numGroup);
 
       // ---- appearance ----
       // A dropdown, not a checkbox — "liveAdaptTheme" is still the only
@@ -2179,7 +2649,8 @@
         + '"Auto-adapt": colors are read live from the game\'s own CSS variables instead.',
       ));
       themeGroup.appendChild(themeSelectRow);
-      root.appendChild(themeGroup);
+      category(paneGeneral, 'Appearance');
+      paneGeneral.appendChild(themeGroup);
 
       // ---- windows ----
       const windowsGroup = document.createElement('div');
@@ -2223,7 +2694,8 @@
       });
       reloadRow.style.marginTop = '6px';
       windowsGroup.appendChild(reloadRow);
-      root.appendChild(windowsGroup);
+      category(paneGeneral, 'Windows');
+      paneGeneral.appendChild(windowsGroup);
 
       // ---- job host (v11) ----
       //
@@ -2254,10 +2726,65 @@
       hostStatusLine.style.cssText = 'font-size:11px; margin:4px 0 8px; line-height:1.45;';
       hostGroup.appendChild(hostStatusLine);
 
+      // TRANSACTIONAL, unlike every other setting in this window.
+      //
+      // These two only mean anything together, and they were being written to
+      // localStorage on EVERY KEYSTROKE with no debounce — so "http://loc" was
+      // your stored configuration for as long as it took to type the rest, and
+      // a half-pasted token replaced a working one the moment you touched the
+      // field. Neither previews itself: nothing about typing an address tells
+      // you whether it is right, which is exactly the case a Save button is
+      // for. It buffers, and the bar below commits.
+      let hostDraft = null;
+      const hostBar = document.createElement('div');
+      hostBar.className = 'apoz-settings-savebar';
+      hostBar.hidden = true;
+      function markHostDirty(patch) {
+        hostDraft = Object.assign({}, hostDraft, patch);
+        hostBar.hidden = false;
+        renderHostBar();
+      }
+      function discardHostDraft() {
+        hostDraft = null;
+        hostBar.hidden = true;
+        hostUrlRow._input.value = jobs.config.url;
+        hostTokenRow._input.value = '';
+      }
+      function commitHostDraft() {
+        if (!hostDraft) return;
+        setHostConfig(hostDraft);
+        hostDraft = null;
+        hostBar.hidden = true;
+        hostTokenRow._input.value = '';
+        hostTokenRow._input.placeholder = jobs.config.hasToken ? '•••••••• (saved)' : 'paste from the host';
+        toast('Job host saved.', { type: 'success', duration: 3000 });
+        if (typeof jobs.connect === 'function') jobs.connect();
+      }
+      function renderHostBar() {
+        const n = hostDraft ? Object.keys(hostDraft).length : 0;
+        hostBar.innerHTML = '';
+        const label = document.createElement('span');
+        label.className = 'apoz-settings-savebar-label';
+        label.textContent = `Job host · ${n} unsaved change${n === 1 ? '' : 's'}`;
+        const spacer = document.createElement('span');
+        spacer.style.flex = '1';
+        const discard = document.createElement('button');
+        discard.type = 'button';
+        discard.className = 'apoz-ui-btn';
+        discard.textContent = 'Discard';
+        discard.addEventListener('click', discardHostDraft);
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.className = 'apoz-ui-btn apoz-ui-btn-primary';
+        save.textContent = 'Save & connect';
+        save.addEventListener('click', commitHostDraft);
+        for (const el of [label, spacer, discard, save]) hostBar.appendChild(el);
+      }
+
       const hostUrlRow = ui.inputRow({
         label: 'Address',
         value: jobs.config.url,
-        onChange: (v) => setHostConfig({ url: v.trim() }),
+        onChange: (v) => markHostDirty({ url: v.trim() }),
       });
       hostGroup.appendChild(hostUrlRow);
 
@@ -2266,10 +2793,11 @@
         value: '',
         info: 'The host prints this when it starts. It is regenerated every run and written nowhere, '
           + 'so it has to be pasted again after restarting the host.',
-        onChange: (v) => setHostConfig({ token: v.trim() }),
+        onChange: (v) => markHostDirty({ token: v.trim() }),
       });
       hostTokenRow._input.placeholder = jobs.config.hasToken ? '•••••••• (saved)' : 'paste from the host';
       hostGroup.appendChild(hostTokenRow);
+      hostGroup.appendChild(hostBar);
 
       // ---- capacity ----
       //
@@ -2316,10 +2844,10 @@
 
       const HOST_COPY = {
         [HOST_STATES.UNKNOWN]: ['', 'Not checked yet — press Connect.'],
-        [HOST_STATES.READY]: ['#4caf50', 'Connected.'],
-        [HOST_STATES.NO_HOST]: ['#e0a33e', 'Not running.'],
-        [HOST_STATES.UNAUTHORIZED]: ['#e0a33e', 'Token not accepted.'],
-        [HOST_STATES.MISMATCH]: ['#e0483e', 'Version mismatch — do not use.'],
+        [HOST_STATES.READY]: ['var(--apoz-success)', 'Connected.'],
+        [HOST_STATES.NO_HOST]: ['var(--apoz-warn)', 'Not running.'],
+        [HOST_STATES.UNAUTHORIZED]: ['var(--apoz-warn)', 'Token not accepted.'],
+        [HOST_STATES.MISMATCH]: ['var(--apoz-danger)', 'Version mismatch — do not use.'],
       };
 
       function renderHostStatus() {
@@ -2376,7 +2904,7 @@
         }
       });
 
-      root.appendChild(hostGroup);
+      paneJobs.appendChild(hostGroup);
 
       // ---- reset (settings, separate from "Reset window sizes" above —
       // one resets WHERE/HOW BIG things are, this resets the settings
@@ -2402,16 +2930,47 @@
         toast('Settings reset to default.', { type: 'success', duration: 3000 });
       });
       resetSettingsRow.appendChild(resetSettingsBtn);
-      root.appendChild(resetSettingsRow);
+      paneGeneral.appendChild(resetSettingsRow);
 
       // ---- more settings, not yet built ----
       const futureNote = document.createElement('div');
       futureNote.style.cssText = 'margin-top:10px; font-size:10px; opacity:.5; line-height:1.4;';
       futureNote.textContent = 'More settings are planned (see INSTRUMENTATION.md/HANDOFF.md for the running list) — this panel will grow.';
-      root.appendChild(futureNote);
+      paneGeneral.appendChild(futureNote);
+
+      // ---- module tabs ----
+      //
+      // A module supplies { label, render(container) } and gets its own pane.
+      // Rendered lazily, ONCE, the first time its tab is opened: a module's
+      // settings pane may read live game state, and building all of them up
+      // front would run every module's probe because someone opened Settings
+      // to change the theme.
+      for (const id of Object.keys(modules)) {
+        const mod = modules[id];
+        const spec = mod && mod.settings;
+        if (!spec || typeof spec.render !== 'function') continue;
+        const pane = addTab(id, spec.label || mod.label || id, 'Modules');
+        pane._render = () => {
+          try { spec.render(pane); } catch (e) {
+            console.error('[ApozCore] settings tab for ' + id + ' threw', e);
+            pane.textContent = 'This module\'s settings could not be shown.';
+          }
+        };
+      }
+      const renderedTabs = new Set();
+      const selectTabLazily = (id) => {
+        selectTab(id);
+        const t = tabs.find((x) => x.id === activeTabId);
+        if (t && t.pane._render && !renderedTabs.has(t.id)) {
+          renderedTabs.add(t.id);
+          t.pane._render();
+        }
+      };
+      selectTabLazily('general');
 
       return {
         root,
+        selectTab: selectTabLazily,
         renderHostStatus,
         renderNumberFormat() {
           const c = getConvention();
@@ -2423,7 +2982,7 @@
           const line1 = document.createElement('div');
           line1.textContent = `Sample: ${formatNumber(1234567.8)}  (decimal "${c.decimal}", thousands "${c.group}")`;
           const line2 = document.createElement('div');
-          line2.style.cssText = auto ? 'color:#3ecf6a;' : 'color:#e0a23e;';
+          line2.style.cssText = auto ? 'color:var(--apoz-success);' : 'color:var(--apoz-warn);';
           line2.textContent = auto ? `✓ Auto-detected from ${sourceLabel}.` : `Forced by you (not auto-detected).`;
           numStatus.appendChild(line1);
           numStatus.appendChild(line2);
@@ -2473,20 +3032,54 @@
     // asks renderDropdown to pick up any per-module change.
     function renderUpdateRow() {
       if (!coreUi) return;
+      // THREE STATES, AND THE THIRD IS THE POINT. This used to render only
+      // "an update exists" and otherwise nothing at all, so a check that ran
+      // and found nothing looked exactly like a check that never ran — the
+      // question behind "tell me when it finds nothing" is not *is there an
+      // update*, it is *did the check actually happen*. Hence the timestamp.
       if (coreUi.selfUpdate) {
+        const box = coreUi.selfUpdate;
+        box.innerHTML = '';
         const entry = updateState.available.find((e) => e.id === 'apoz-core');
-        coreUi.selfUpdate.innerHTML = '';
-        if (entry) {
+        const others = updateState.available.length - (entry ? 1 : 0);
+        if (updateState.checking) {
+          const el = document.createElement('span');
+          el.textContent = 'Checking…';
+          box.appendChild(el);
+        } else if (entry || others > 0) {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'apoz-core-self-update-btn';
-          btn.textContent = `Core ${entry.to} available ↗`;
-          btn.title = entry.notes || `${entry.from} → ${entry.to}. Opens the script so Tampermonkey can install it.`;
-          btn.addEventListener('click', (e) => { e.stopPropagation(); openUpdate(entry); });
-          coreUi.selfUpdate.appendChild(btn);
+          btn.textContent = entry ? `Core ${entry.to} available ↗` : 'Update available ↗';
+          btn.title = entry
+            ? (entry.notes || `${entry.from} → ${entry.to}. Opens the script so Tampermonkey can install it.`)
+            : `${others} module update${others === 1 ? '' : 's'} available — see the rows above.`;
+          if (entry) btn.addEventListener('click', (e) => { e.stopPropagation(); openUpdate(entry); });
+          box.appendChild(btn);
+        } else if (updateState.error) {
+          const el = document.createElement('span');
+          el.className = 'apoz-core-update-warn';
+          el.textContent = 'Check failed';
+          el.title = updateState.error;
+          box.appendChild(el);
+        } else if (updateState.checkedAt) {
+          const el = document.createElement('span');
+          el.className = 'apoz-core-update-ok';
+          el.textContent = 'Up to date · ' + shortAgo(updateState.checkedAt);
+          el.title = 'Last checked ' + new Date(updateState.checkedAt).toLocaleString();
+          box.appendChild(el);
         }
       }
       if (coreUi.moduleRows) renderDropdown();
+    }
+
+    // Relative, from a stored timestamp — never accumulated (INSTRUMENTATION §4.4).
+    function shortAgo(atMs) {
+      const s = Math.max(0, Math.round((Date.now() - atMs) / 1000));
+      if (s < 60) return 'just now';
+      if (s < 3600) return Math.round(s / 60) + 'm ago';
+      if (s < 86400) return Math.round(s / 3600) + 'h ago';
+      return Math.round(s / 86400) + 'd ago';
     }
 
     function renderToolRows() {
@@ -2498,13 +3091,14 @@
         const row = document.createElement('div');
         row.className = 'apoz-core-row';
         const dot = document.createElement('span');
-        dot.className = 'apoz-core-row-dot';
-        dot.style.visibility = 'hidden'; // keeps label alignment with module rows
+        dot.className = 'apoz-core-sd';
+        dot.style.visibility = 'hidden'; // holds the grid column, so tool and module names align
         const label = document.createElement('span');
+        label.className = 'apoz-core-row-name';
         label.textContent = tool.label;
         const arrow = document.createElement('span');
         arrow.textContent = '↗';
-        arrow.style.cssText = 'margin-left:auto;opacity:.55;font-size:11px';
+        arrow.className = 'apoz-core-row-state';
         arrow.title = 'Opens in a new tab';
         row.appendChild(dot);
         row.appendChild(label);
@@ -2553,6 +3147,41 @@
       }
     }
 
+    // ---- module state: what it is DOING, not merely whether it is open ----
+    //
+    // `enabled` and `open` are Core's business; `state` is the module's own
+    // report, and the nav exists to surface it — "is my tracker still
+    // running?" should be answerable without opening anything.
+    //
+    // Four live states plus off. Deliberately generic, because the alternative
+    // is every module inventing its own vocabulary in a row eight characters
+    // wide. `attention` and `problem` render as a GLYPH rather than a coloured
+    // dot: colour alone does not say "this one needs you", and it is the state
+    // a colour-blind reading is most likely to lose.
+    const MODULE_STATES = ['idle', 'running', 'attention', 'problem'];
+    const STATE_GLYPH = { attention: '!', problem: '✕' };
+
+    function stateSlot(mod) {
+      const el = document.createElement('span');
+      const s = mod.enabled ? (mod.state || 'idle') : 'off';
+      el.className = 'apoz-core-sd apoz-core-sd-' + s;
+      if (STATE_GLYPH[s]) el.textContent = STATE_GLYPH[s];
+      return el;
+    }
+
+    // The right-hand column of a dropdown row. A module's own `stateDetail` is
+    // preferred over the generic word wherever it has one, because "2h 14m" is
+    // the answer and "running" is only the category.
+    function stateText(mod) {
+      if (!mod.enabled) return 'off';
+      if (mod.stateDetail) return mod.stateDetail;
+      const s = mod.state || 'idle';
+      if (s === 'idle') return 'idle';
+      if (s === 'running') return 'running';
+      if (s === 'attention') return 'needs you';
+      return 'problem';
+    }
+
     function renderDropdown() {
       renderToolRows();
       coreUi.moduleRows.innerHTML = '';
@@ -2560,37 +3189,41 @@
         const mod = modules[id];
         const row = document.createElement('div');
         row.className = 'apoz-core-row' + (mod.enabled ? ' apoz-core-row-enabled' : '');
-        const dot = document.createElement('span');
-        dot.className = 'apoz-core-row-dot';
+        row.appendChild(stateSlot(mod));
         const label = document.createElement('span');
+        label.className = 'apoz-core-row-name';
         label.textContent = mod.label;
-        if (mod.description) row.title = mod.description;
-        // Visible, not just in a tooltip. Putting the version in the script's
-        // @name would have been the obvious way to surface it and is a trap:
-        // Tampermonkey identifies a script by @namespace + @name, so a name
-        // that changes every release installs a new script every release and
-        // updating stops working entirely.
-        if (mod.version) {
-          const ver = document.createElement('span');
-          ver.className = 'apoz-core-row-ver';
-          ver.textContent = 'v' + mod.version;
-          label.appendChild(ver);
-        }
-        row.appendChild(dot);
+        // The version moved OUT of every row and into the dropdown's footer,
+        // which freed the right-hand column for the thing that actually
+        // changes — what the module is doing, or that it has an update. A
+        // row's own version is still one hover away, so nothing was lost.
+        // (Putting it in the script's @name instead would have been the
+        // obvious surfacing and is a trap: Tampermonkey identifies a script by
+        // @namespace + @name, so a name that changes every release installs a
+        // new script every release and updating stops working entirely.)
+        row.title = (mod.description ? mod.description + ' — ' : '')
+          + (mod.version ? 'v' + mod.version : '');
         row.appendChild(label);
-        // Revealed on hover only (see the CSS rule) — the row itself still
-        // toggles enabled/disabled on click, so the update button has to
-        // catch its own click and stop it from reaching that handler.
+
+        // The right-hand column carries ONE thing, in priority order: an
+        // available update beats a live state, because it is actionable and
+        // the state will still be there afterwards.
         const updateEntry = updateState.available.find((e) => e.id === id);
+        const state = document.createElement('span');
+        state.className = 'apoz-core-row-state';
         if (updateEntry) {
-          const updateBtn = document.createElement('button');
-          updateBtn.type = 'button';
-          updateBtn.className = 'apoz-core-row-update-btn';
-          updateBtn.textContent = `Update ${updateEntry.to}`;
-          updateBtn.title = updateEntry.notes || `${updateEntry.from} → ${updateEntry.to}`;
-          updateBtn.addEventListener('click', (e) => { e.stopPropagation(); openUpdate(updateEntry); });
-          row.appendChild(updateBtn);
+          state.className += ' apoz-core-row-state-live';
+          state.textContent = `${updateEntry.from} → ${updateEntry.to}`;
+          row.title = updateEntry.notes || row.title;
+          state.style.cursor = 'pointer';
+          state.addEventListener('click', (e) => { e.stopPropagation(); openUpdate(updateEntry); });
+        } else {
+          state.textContent = stateText(mod);
+          if (mod.enabled && (mod.state === 'attention' || mod.state === 'problem')) {
+            state.className += ' apoz-core-row-state-live';
+          }
         }
+        row.appendChild(state);
         row.addEventListener('click', (e) => { e.stopPropagation(); setEnabled(id, !mod.enabled); });
         coreUi.moduleRows.appendChild(row);
       }
@@ -2601,12 +3234,14 @@
         row.title = 'Two copies of this module are installed. One is running; '
           + 'delete the older script in the Tampermonkey dashboard.';
         const dot = document.createElement('span');
-        dot.className = 'apoz-core-row-dot';
-        dot.style.background = '#e0a23e';
+        dot.className = 'apoz-core-sd apoz-core-sd-problem';
+        dot.textContent = '!';
         const label = document.createElement('span');
+        label.className = 'apoz-core-row-name';
         label.textContent = `${(modules[id] && modules[id].label) || id} - installed twice`;
         row.appendChild(dot);
         row.appendChild(label);
+        row.appendChild(document.createElement('span'));
         coreUi.moduleRows.appendChild(row);
       }
 
@@ -2619,12 +3254,14 @@
         row.style.cssText = 'opacity:.55;cursor:default';
         row.title = `This module needs Apoz Core v${info.needsCore}. Update Core from the row below.`;
         const dot = document.createElement('span');
-        dot.className = 'apoz-core-row-dot';
-        dot.style.background = '#e0a23e';
+        dot.className = 'apoz-core-sd apoz-core-sd-attention';
+        dot.textContent = '!';
         const label = document.createElement('span');
+        label.className = 'apoz-core-row-name';
         label.textContent = `${info.label} — needs Core v${info.needsCore}`;
         row.appendChild(dot);
         row.appendChild(label);
+        row.appendChild(document.createElement('span'));
         coreUi.moduleRows.appendChild(row);
       }
     }
@@ -2739,8 +3376,47 @@
       const mod = modules[id];
       if (!mod || mod.badge === active) return;
       mod.badge = active;
+      // A badge has always meant "this module needs you now", which is exactly
+      // `attention`. Kept as its own API because modules in the wild call it,
+      // and mapped here so there is ONE state model rather than a badge flag
+      // sitting beside a state field and disagreeing with it.
+      if (active) { mod.state = 'attention'; }
+      else if (mod.state === 'attention') { mod.state = mod.stateBeforeBadge || 'idle'; }
       renderQuickRow();
+      renderDropdownIfOpen();
       updateTitleBadge();
+    }
+
+    // Core.setState(id, state, detail) — the module says what it is doing.
+    // An unknown state is REFUSED rather than rendered as a blank slot: a
+    // typo'd state that silently shows nothing is indistinguishable from a
+    // module that stopped reporting, which is the failure this whole surface
+    // exists to prevent.
+    // Core.openSettings(tabId) — a module jumps straight to its own pane
+    // rather than opening Settings and asking the user to find it.
+    function openSettings(tabId) { openSettingsWindow(tabId); }
+
+    function setState(id, state, detail) {
+      const mod = modules[id];
+      if (!mod) return;
+      if (!MODULE_STATES.includes(state)) {
+        console.warn('[ApozCore] setState: unknown state "' + state + '" for ' + id
+          + ' — expected one of ' + MODULE_STATES.join(', '));
+        return;
+      }
+      const text = detail == null ? '' : String(detail);
+      if (mod.state === state && mod.stateDetail === text) return;
+      if (state !== 'attention') mod.stateBeforeBadge = state;
+      mod.state = state;
+      mod.stateDetail = text;
+      renderQuickRow();
+      renderDropdownIfOpen();
+    }
+
+    // Only repaint the dropdown when it is actually on screen. It rebuilds
+    // every row, and a module reporting a countdown calls this once a second.
+    function renderDropdownIfOpen() {
+      if (coreUi && coreUi.dropdown && !coreUi.dropdown.hidden) renderDropdown();
     }
 
     function setOpen(id, isOpen) {
@@ -3275,6 +3951,10 @@
       version: APOZ_CORE_VERSION,
       release: RELEASE,
       registerModule, registerLink, setEnabled, setBadge, setOpen,
+      // v11: a module reports WHAT IT IS DOING, so the nav can answer
+      // "is my tracker still running?" without opening anything.
+      setState, openSettings,
+      get moduleStates() { return MODULE_STATES.slice(); },
       // shared window framework (v6) — every module's panel and every
       // reusable table/modal/tooltip/input-row is built from these, so there
       // is one window system, not one per module.

@@ -2,7 +2,7 @@
 // @name         Apoz Core: Fighter Allocator
 // @namespace    apoz-core
 // @author       Apoz
-// @version      1.7.0
+// @version      1.8.0
 // @description  Apoz Core module (requires "Apoz Core"). Allocates gold-purchased fighter stats (Health/Damage/Hit/Dodge/Defense/Crit Damage) across your 6 fighters. Class-keyed profiles with a full table (category, classes, date, source), World Boss-aware math (Hit target from boss level, exact Damage/Crit Damage split), and two-way import/export with the community "Fighter Optimizer" gold-plan format. Fills the game's own stat inputs; never auto-clicks Save Preset.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -57,7 +57,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("fighter-allocator", "1.7.0-dev", function (Core) {
+  })("fighter-allocator", "1.8.0-dev", function (Core) {
 
 
   const MODULE_ID = 'fighter-allocator';
@@ -475,6 +475,42 @@
     return -1;
   }
 
+  // ---- the one number rule the import path has to get right ----
+  //
+  // REPORTED: "community import mishandles comma/dot". The import path used
+  // bare `Number()` everywhere, and the obvious fix — route it all through
+  // `Core.parseNumber` — is WRONG and would corrupt data that is currently
+  // correct. A JSON *number* is locale-neutral by specification: `1.234` in
+  // JSON genuinely means 1.234, and reinterpreting it under the player's
+  // display convention would turn it into 1234.
+  //
+  // So the rule is about the JS type, not the format:
+  //   • already a `number`  -> use it as-is, it cannot be ambiguous.
+  //   • a `string`          -> `Core.parseNumber`, which knows the account's
+  //                            own group/decimal convention and RETURNS NULL
+  //                            rather than guessing on an ambiguous one.
+  // Anything else, or a refusal, is null — and callers must SAY so rather than
+  // defaulting, because a silently-dropped stat is a wrong plan that looks
+  // right (CLAUDE.md rule 3).
+  //
+  // The real community export's shape is UNCONFIRMED — nobody has captured
+  // one — so both branches have to work rather than one being the "real" path.
+  function importNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string') {
+      const t = value.trim();
+      if (t === '') return null;
+      if (typeof Core.parseNumber === 'function') {
+        const n = Core.parseNumber(t);
+        return Number.isFinite(n) ? n : null;
+      }
+      // Older Core: refuse rather than fall back to Number(), which is exactly
+      // the misparse being fixed.
+      return null;
+    }
+    return null;
+  }
+
   function findSourceBudgetB(data) {
     if (!data || typeof data !== 'object') return null;
     const aliases = new Set(['budgetb', 'budgetbillions', 'sourcebudgetb', 'additionalbudgetb',
@@ -482,7 +518,11 @@
       'usablegold', 'usablegoldb']);
     for (const [key, value] of Object.entries(data)) {
       if (aliases.has(String(key).toLowerCase().replace(/[^a-z0-9]/g, ''))) {
-        if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+        // Was `typeof value === 'number'` only, so a STRING-encoded budget was
+        // not misparsed — it was invisible, which is a quieter failure and a
+        // worse one: the plan imported looking complete, minus its budget.
+        const n = importNumber(value);
+        if (n !== null && n > 0) return n;
       }
     }
     for (const value of Object.values(data)) {
@@ -502,9 +542,10 @@
       const fighter = row.fighter || row.Fighter;
       const posIdx = normalizePositionName(row.position ?? row.Position ?? row.slot ?? row.Slot);
       const stat = STATS.find((s) => s.toLowerCase() === String(row.stat || row.Stat || '').toLowerCase());
-      const level = Number(row.recommended ?? row.Recommended ?? row.level ?? row.Level);
-      if (!fighter || posIdx === -1 || !stat || !Number.isFinite(level)) {
-        throw new Error('Each row needs a recognisable Position, Fighter, Stat and Recommended level.');
+      const level = importNumber(row.recommended ?? row.Recommended ?? row.level ?? row.Level);
+      if (!fighter || posIdx === -1 || !stat || level === null) {
+        throw new Error('Each row needs a recognisable Position, Fighter, Stat and Recommended level'
+          + ' — and the level must be a plain number, or text this account\'s number format can read.');
       }
       layout[posIdx] = fighter;
       if (!stats[fighter]) stats[fighter] = emptyStatBlock();
@@ -532,8 +573,16 @@
       const src = raw.stats[cls] || {};
       stats[cls] = emptyStatBlock();
       for (const stat of STATS) {
-        const v = Number(src[stat]);
-        if (Number.isFinite(v)) stats[cls][stat] = Math.max(0, Math.round(v));
+        if (src[stat] === undefined || src[stat] === null) continue;
+        const v = importNumber(src[stat]);
+        // A present-but-unreadable value is REFUSED, not skipped: silently
+        // leaving it at zero produces a plan that allocates nothing to that
+        // stat and looks deliberate.
+        if (v === null) {
+          throw new Error(`"${cls}" has a ${stat} value that could not be read as a number`
+            + ` (got ${JSON.stringify(src[stat])}). Check the file's number format.`);
+        }
+        stats[cls][stat] = Math.max(0, Math.round(v));
       }
     }
     return makeProfile({
@@ -1004,7 +1053,9 @@
     const archived = profiles.filter((p) => p.archived);
     const columns = buildTableColumns();
     const rowActions = buildRowActions();
-    wrap.appendChild(Core.ui.table({ columns, rows: active, rowActions }));
+    const table = Core.ui.table({ columns, rows: active, rowActions });
+    padWithGhostRows(table, columns.length + 1, active.length);
+    wrap.appendChild(table);
     if (ui.showArchived && archived.length) {
       const divider = document.createElement('div');
       divider.style.cssText = 'border-top:1px solid var(--apoz-border, var(--border)); margin:10px 0 6px; '
@@ -1016,20 +1067,75 @@
     return wrap;
   }
 
+  // Placeholder rows up to a resting count. Not decoration: without them an
+  // empty plan list renders a header with nothing underneath, which reads as a
+  // broken table rather than an empty one — and a table that grows from zero
+  // resizes the whole panel the moment you add your first plan.
+  const RESTING_ROWS = 5;
+  function padWithGhostRows(table, colCount, realRows) {
+    const body = table.querySelector('tbody');
+    if (!body) return;
+    for (let i = realRows; i < RESTING_ROWS; i++) {
+      const tr = document.createElement('tr');
+      tr.className = 'apoz-fa-ghost';
+      for (let c = 0; c < colCount; c++) tr.appendChild(document.createElement('td'));
+      body.appendChild(tr);
+    }
+  }
+
   function rerenderProfiles() {
     if (!ui.profileTableContainer) return;
     ui.profileTableContainer.innerHTML = '';
     ui.profileTableContainer.appendChild(renderProfileTable());
+    if (ui.tableHint) {
+      // With no plans at all this line IS the empty state — there was none
+      // before, at all. With some, it stays as the answer to "how do I add
+      // another", which is the question the blank space raises.
+      const n = profiles.filter((p) => !p.archived).length;
+      ui.tableHint.textContent = n === 0
+        ? 'No plans yet. Optimize for World Boss, or Import one.'
+        : 'Optimize for World Boss, or Import, to add another.';
+    }
   }
 
   // ==== status bar — the bottom-of-window progress/result line for Allocate ====
+  // TWO SURFACES, BECAUSE THEY ARE TWO DIFFERENT THINGS.
+  //
+  // `ambient` is state AT REST — which page you are on, what gold was read. It
+  // is true continuously, it is re-derived on every poll, and writing it into
+  // an event log would bury the events under a hundred identical lines. It
+  // gets a quiet context line that is simply overwritten.
+  //
+  // Everything else is an EVENT: it happened once, at a time, and the user
+  // wants the record. That goes to Core's activity strip, where the level
+  // carries the meaning (a verification mismatch is `failed` and names both
+  // numbers; the user pressing Stop is `stopped`, not a failure).
+  //
+  // Keeping ONE setStatus() signature is deliberate: every existing call site
+  // already passes the right level, so the routing lands without touching
+  // twelve call sites and inventing twelve chances to mislabel one.
   function setStatus(message, level) {
-    if (!ui.statusBar) return;
-    ui.statusBar.textContent = message;
-    ui.statusBar.dataset.level = level || 'info';
+    if (level === 'ambient') {
+      if (ui.contextLine) ui.contextLine.textContent = message;
+      return;
+    }
+    const lvl = level === 'error' ? 'failed' : level === 'success' ? 'done' : 'info';
+    say(lvl, message);
+  }
+
+  // say(level, text) — the one call site for "tell the user what happened".
+  // Guarded: an older Core beneath a newer module is a state real users reach,
+  // and a module must never fail because its feedback surface is missing.
+  function say(level, text) {
+    if (activity && typeof activity[level] === 'function') activity[level](text);
+  }
+
+  function reportState(state, detail) {
+    if (typeof Core.setState === 'function') Core.setState(MODULE_ID, state, detail || '');
   }
 
   let allocateAbort = false;
+  let activity = null; // Core.ui.activity(...) — this module's record of what it did
 
   // "Allocate" — the ONE action that touches the game page. Verifies it's on
   // the right page, resolves classes against the LIVE formation (order-
@@ -1075,6 +1181,7 @@
     }
     allocateAbort = false;
     if (ui.stopAllocateBtn) ui.stopAllocateBtn.hidden = false;
+    reportState('running', 'allocating');
     try {
       setStatus(`Filling sliders for ${resolution.matched.length} fighter(s)…`, 'info');
       await applyResolved(resolution.matched, profile, buttons, liveBudgetB,
@@ -1086,6 +1193,7 @@
         setStatus(`Filled, but ${mismatches.length} value(s) don't match what was requested — `
           + `${mismatches.slice(0, 3).map((m) => `${m.class} ${m.stat}: wanted ${m.want}, page shows ${m.got}`).join('; ')}. `
           + `Check before pressing Save Preset.`, 'error');
+        reportState('problem', 'check sliders');
         return;
       }
       setStatus('All sliders confirmed on target. Press Save Preset in-game to commit — watching for confirmation…', 'success');
@@ -1096,10 +1204,17 @@
       sawSaveToast ? 'success' : 'info');
     } catch (err) {
       console.error('[fighter-allocator]', err);
-      setStatus(err.message === 'Stopped.' ? 'Stopped — some fighters may be partly filled, check before Save Preset.'
-        : String(err.message || err), 'error');
+      // The user pressing Stop is not a failure, and flattening the two into
+      // one red line loses the distinction that matters when you look back at
+      // what happened: `stopped` is you, `failed` is the tool.
+      if (err.message === 'Stopped.') {
+        say('stopped', 'Allocation stopped by you — some fighters may be partly filled, check before Save Preset.');
+      } else {
+        setStatus(String(err.message || err), 'error');
+      }
     } finally {
       if (ui.stopAllocateBtn) ui.stopAllocateBtn.hidden = true;
+      reportState('idle', '');
     }
   }
 
@@ -1181,35 +1296,6 @@
   // about. Now: one button here, a dedicated window does the actual work —
   // scan every fighter's gear, compute, ready a profile — and the main
   // panel goes back to being the profile table front and center.
-  function buildWorldBossLauncher() {
-    const wrap = document.createElement('div');
-    wrap.className = 'apoz-fa-group';
-    wrap.style.cssText += 'flex-direction:row; align-items:center; justify-content:space-between; gap:10px;';
-
-    const label = document.createElement('div');
-    const title = document.createElement('div');
-    title.style.cssText = 'font-weight:bold; font-size:11px;';
-    title.textContent = 'World Boss';
-    const lastRun = document.createElement('div');
-    lastRun.style.cssText = 'font-size:10px; opacity:.6;';
-    lastRun.textContent = 'Not run yet this session.';
-    label.appendChild(title);
-    label.appendChild(lastRun);
-    wrap.appendChild(label);
-    ui.wbLastRunLine = lastRun;
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'apoz-ui-btn apoz-ui-btn-primary';
-    btn.textContent = 'Optimize for World Boss';
-    btn.title = 'Scans every fighter\'s equipped Crit Chance, then computes the exact Hit target and '
-      + 'Damage/Crit Damage split for the current World Boss level — no manual fields to fill in.';
-    btn.addEventListener('click', () => openWorldBossOptimizer());
-    wrap.appendChild(btn);
-
-    return wrap;
-  }
-
   // Best-effort: scans the page's own rendered text for "Fighter World Boss
   // Level N" (the exact Archive wording) and takes the FIRST match, which is
   // the most recent entry in a list that renders newest-first. Absent rather
@@ -1227,13 +1313,35 @@
   // wording it matches on are both taken from earlier session notes, not
   // re-confirmed live.
   let lastKnownBossLevel = null;
+  // OBSERVABLE, WHICH IT HAS NEVER BEEN. Both the route string and the
+  // "Fighter World Boss Level N" wording come from session notes and have
+  // never been confirmed against the real page — and this function used to
+  // return silently on every miss: no log, no toast, no status. So a user
+  // could not tell "this page had no boss level" from "this has never once
+  // worked", which is exactly why it was still unverified after shipping.
+  //
+  // NOTHING ABOUT THE ROUTE OR THE WORDING IS CHANGED HERE. Guessing at a
+  // better guess would just move the unverified claim. What changes is that
+  // ONE visit to the page now says which half failed, so the next live session
+  // can settle it instead of re-deriving the question.
+  let archiveMissSaidFor = null;
   function checkArchivePageForBossLevel() {
-    if (!location.pathname.includes('/world-boss/archive')) return;
-    const level = readLatestFighterWorldBossLevel();
+    const path = location.pathname;
+    const onRoute = path.includes('/world-boss/archive');
+    const level = onRoute ? readLatestFighterWorldBossLevel() : null;
     if (level) {
       lastKnownBossLevel = level;
       if (ui.optLevelInput && !ui.optLevelInput.value) ui.optLevelInput.value = String(level);
+      if (archiveMissSaidFor !== null) archiveMissSaidFor = null;
+      say('done', `World Boss level ${level} picked up from the archive page.`);
+      return;
     }
+    // Once per path, not once per navigation event: Core's heartbeat re-runs
+    // this, and a strip full of the same line is a strip nobody reads.
+    if (!onRoute || archiveMissSaidFor === path) return;
+    archiveMissSaidFor = path;
+    say('refused', `On ${path} but no "Fighter World Boss Level N" text found`
+      + ' — boss level not auto-filled. Route matched; the wording may differ.');
   }
   // Route detection belongs to Core (v9's onNavigate), not here. This used to
   // wrap history.pushState/replaceState a SECOND time — Core already wraps
@@ -1661,7 +1769,7 @@
       upsertProfile(draft);
       rerenderProfiles();
       optLog(`Added "${draft.name}" to your plans below. Press Allocate on it when ready.`);
-      if (ui.wbLastRunLine) ui.wbLastRunLine.textContent = `Last run: ${draft.name}`;
+      say('done', `Plan "${draft.name}" added from the World Boss optimiser.`);
       Core.toast(`Added "${draft.name}".`, { type: 'success', duration: 5000 });
       pendingOptimizerResult = null;
       resultRow.hidden = true;
@@ -2007,28 +2115,50 @@
          read the game's LIVE variables regardless of the liveAdaptTheme
          setting, so the two could disagree any time they weren't
          coincidentally equal. */
-      .apoz-fa-group { border: 1px solid var(--apoz-border, var(--border)); border-radius: 6px; padding: 8px 10px;
-        display: flex; flex-direction: column; gap: 5px; }
-      .apoz-fa-group-label { font-weight: bold; opacity: .7; text-transform: uppercase; font-size: 10px;
-        letter-spacing: .04em; }
-      /* Subtler by default — this is ambient state (page detected? gold read?
-         which plan is mid-allocation?), not a persistent alert box. Only
-         gains a border/color once there is something to actually flag. */
-      #apoz-fa-status { font-size: 10.5px; padding: 5px 8px; border-radius: 5px; border: 1px solid transparent;
-        opacity: .65; min-height: 13px; margin-top: 4px; }
-      #apoz-fa-status[data-level="error"] { border-color: #9b2c2c; color: #e0483e; opacity: 1; }
-      #apoz-fa-status[data-level="success"] { border-color: #2f855a; color: #3ecf6a; opacity: 1; }
-      #apoz-fa-status[data-level="info"] { opacity: .9; }
+      .apoz-fa-group { border: 1px solid var(--apoz-border, var(--border));
+        border-radius: var(--apoz-r-md); padding: var(--apoz-s4) 10px;
+        display: flex; flex-direction: column; gap: var(--apoz-s3); }
+      .apoz-fa-group-label { font-weight: bold; opacity: var(--apoz-em-normal);
+        text-transform: uppercase; font-size: var(--apoz-fs-caption); letter-spacing: .04em; }
+      /* State at rest, not an alert box: which page you are on and what gold
+         was read. Events go to the activity strip instead. */
+      #apoz-fa-context { font-size: var(--apoz-fs-caption); opacity: var(--apoz-em-muted);
+        padding: var(--apoz-s1) 0; }
+
+      /* THE TABLE GROWS, THEN SCROLLS.
+         Nothing set a height before, so extra window height became blank space
+         BELOW the status row rather than around the table, and an empty plan
+         list rendered a header with nothing under it at all. Now: a resting
+         minimum so the panel never looks broken when nearly empty, growth as
+         plans are added, and a scrollbar only once it reaches a generous
+         ceiling. The resting height is why adding your first plan replaces a
+         ghost row in place instead of resizing the panel. */
+      .apoz-fa-table-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+      .apoz-fa-table-scroll { overflow: auto; min-height: 148px; max-height: 420px; flex: 1; }
+      .apoz-fa-ghost td { height: 22px; color: transparent; }
+      .apoz-fa-ghost td::after { content: ""; display: block; height: var(--apoz-s4);
+        border-radius: 3px; background: color-mix(in srgb, var(--apoz-border, var(--border)) 40%, transparent); }
+      .apoz-fa-ghost td:nth-child(2)::after { width: 55%; }
+      .apoz-fa-ghost td:nth-child(3)::after { width: 70%; }
+      .apoz-fa-hint { text-align: center; font-size: var(--apoz-fs-caption);
+        opacity: var(--apoz-em-muted); padding: var(--apoz-s4) var(--apoz-s2) var(--apoz-s1);
+        line-height: 1.5; }
     `;
     document.head.appendChild(style);
 
-    // The profile table is what this window is predominantly FOR — it comes
-    // first and gets the bulk of the space; the World Boss launcher above it
-    // is a single compact action row, not a form competing for room.
-    content.appendChild(buildWorldBossLauncher());
-
+    // THE PLANS TABLE IS THE SUBJECT OF THIS WINDOW, so nothing sits above it.
+    // The World Boss optimiser used to open the panel with a headline and a
+    // primary button, which read as the module's purpose — it is not. It is
+    // one of several ways to CREATE a plan, so it belongs in the table's own
+    // action row beside Import, at the same weight.
+    //
+    // Deliberately NO answer band here either. DESIGN.md §3 allows at most one
+    // display-scale element per window, not exactly one, and a window whose
+    // subject is a table has none — inventing a headline out of whatever
+    // number was nearest is how a panel ends up shouting a figure nobody
+    // opened it for. The gold reading lives in the context line instead.
     const tableWrap = document.createElement('div');
-    tableWrap.className = 'apoz-fa-group';
+    tableWrap.className = 'apoz-fa-group apoz-fa-table-wrap';
     const tableHeading = document.createElement('div');
     tableHeading.className = 'apoz-fa-group-label';
     tableHeading.style.cssText += 'display:flex; justify-content:space-between; align-items:center;';
@@ -2070,32 +2200,41 @@
     importBtn.addEventListener('click', () => openImportExportModal(null));
     tableHeadingRight.appendChild(importBtn);
 
-    const newBtn = document.createElement('button');
-    newBtn.type = 'button';
-    newBtn.className = 'apoz-ui-icon-btn';
-    newBtn.textContent = '+';
-    newBtn.disabled = true;
-    newBtn.setAttribute('data-tooltip', 'Create new — coming soon (needs relative/current-allocation editing support)');
-    newBtn.setAttribute('data-tooltip-right', '');
-    newBtn.setAttribute('data-tooltip-wide', '');
-    tableHeadingRight.appendChild(newBtn);
+    // The "+" that used to sit here was permanently disabled behind a
+    // "coming soon" tooltip. A control that cannot be used is worse than no
+    // control: it occupies the place where a working one would go and teaches
+    // people not to look there. It comes back when it does something.
+    const wbBtn = document.createElement('button');
+    wbBtn.type = 'button';
+    wbBtn.className = 'apoz-ui-btn';
+    wbBtn.textContent = 'Optimize for World Boss';
+    wbBtn.title = 'Scans every fighter\'s equipped Crit Chance, then computes the exact Hit target and '
+      + 'Damage/Crit Damage split for the current World Boss level — no manual fields to fill in.';
+    wbBtn.addEventListener('click', () => openWorldBossOptimizer());
+    tableHeadingRight.appendChild(wbBtn);
     tableHeading.appendChild(tableHeadingRight);
     tableWrap.appendChild(tableHeading);
 
     const tableContainer = document.createElement('div');
-    tableContainer.style.overflowX = 'auto';
+    tableContainer.className = 'apoz-fa-table-scroll';
     tableWrap.appendChild(tableContainer);
     ui.profileTableContainer = tableContainer;
+
+    const hint = document.createElement('div');
+    hint.className = 'apoz-fa-hint';
+    tableWrap.appendChild(hint);
+    ui.tableHint = hint;
+
     content.appendChild(tableWrap);
     rerenderProfiles();
 
     const statusRow = document.createElement('div');
     statusRow.style.cssText = 'display:flex; align-items:center; gap:8px;';
-    const statusBar = document.createElement('div');
-    statusBar.id = 'apoz-fa-status';
-    statusBar.style.flex = '1';
-    statusRow.appendChild(statusBar);
-    ui.statusBar = statusBar;
+    const contextLine = document.createElement('div');
+    contextLine.id = 'apoz-fa-context';
+    contextLine.style.flex = '1';
+    statusRow.appendChild(contextLine);
+    ui.contextLine = contextLine;
 
     const stopAllocateBtn = document.createElement('button');
     stopAllocateBtn.type = 'button';
@@ -2108,6 +2247,13 @@
     ui.stopAllocateBtn = stopAllocateBtn;
 
     content.appendChild(statusRow);
+
+    // Guarded, like every optional Core API: without it the module simply has
+    // no strip, rather than failing to start.
+    if (Core.ui && typeof Core.ui.activity === 'function') {
+      activity = Core.ui.activity({ name: MODULE_ID, max: 6 });
+      content.appendChild(activity.el);
+    }
     updateAmbientStatus();
 
     return content;
@@ -2186,7 +2332,7 @@
       __forTest: {
         profiles: () => profiles,
         upsertProfile, deleteProfileHard, setArchived, duplicateProfile,
-        detectAndNormalizeImport, exportNative, exportFriendFormat,
+        detectAndNormalizeImport, exportNative, exportFriendFormat, importNumber,
         resolveProfileAgainstLayout,
         bossDodgeAtLevel, hitTargetForBossLevel, hitChanceAt, expectedDamage,
         scanEquippedStatsViaFiber, readStatTotalFromCard, gearFromDisplayedTotal, equipmentTierMultiplier,
