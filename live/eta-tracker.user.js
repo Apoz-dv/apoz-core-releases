@@ -2,7 +2,7 @@
 // @name         Apoz Core: Pet Slot Alarm
 // @namespace    apoz-core
 // @author       Apoz
-// @version      4.10.0
+// @version      4.11.0
 // @description  Apoz Core module (requires "Apoz Core"). Read-only overlay: estimates time until the Combat pet slot upgrade is affordable from your live gold and the exact upgrade-cost formula (no need to sit on the Pets page), rings a gentle alarm - and optionally a desktop notification - when it is, and stays accurate in a backgrounded tab. Ships the Party Gold ROI calculator. No auto-clicking.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -49,7 +49,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("eta-tracker", "4.10.0-dev", function (Core) {
+  })("eta-tracker", "4.11.0-dev", function (Core) {
 
 
   const ACTION_MS = 10_000;
@@ -644,6 +644,13 @@
       return;
     }
     if (trackerAcknowledged) return;
+    // THE COMPANION OWNS THE NOISE WHEN IT HAS IT. Both alarms stay armed --
+    // choosing one owner up front means getting it wrong exactly when the
+    // Companion disappears -- so the browser stays silent only while the
+    // Companion is genuinely delegating, and takes over the instant it is not.
+    // The badge, the strip line and the ready state all still update either
+    // way; this suppresses the SOUND, nothing else.
+    if (companionMode() === 'companion') { trackerAlarmFired = true; return; }
     const now = Date.now();
     if (!trackerAlarmFired || now >= nextAlarmAtMs) {
       const first = !trackerAlarmFired;
@@ -1262,7 +1269,7 @@
     }
     renderReadiness();
     renderProjection();
-    renderCompanionRow();
+
     // PROMINENCE TRACKS RELEVANCE. All three used to sit at equal weight in
     // every state, which made a row of three the loudest thing under the
     // countdown. Now the one that does something is normal and the others
@@ -1271,7 +1278,12 @@
     const running = runState === 'running';
     setAttr(ui.startBtn, 'class', 'apoz-ui-btn' + (running ? ' qett-dim' : ' apoz-ui-btn-primary'));
     setAttr(ui.stopBtn, 'class', 'apoz-ui-btn' + (running ? '' : ' qett-dim'));
-    setAttr(ui.resetBtn, 'class', 'apoz-ui-btn qett-dim');
+    // Reset re-derives the run's end from the configured figure, so it does
+    // something exactly when a session is NOT running and a figure is set --
+    // which is also when it is the button you want. It was hard-coded dim in
+    // every state, i.e. the relevance rule applied to it backwards.
+    const resetUseful = !running && configuredRunActions !== null;
+    setAttr(ui.resetBtn, 'class', 'apoz-ui-btn' + (resetUseful ? '' : ' qett-dim'));
     setAttr(ui.startBtn, 'disabled', runState === 'running');
     setAttr(ui.stopBtn, 'disabled', runState === 'idle');
 
@@ -1455,12 +1467,30 @@
     return { earned, spent, endGold: gold, endLevel: level, upgrades, capped: actions > n };
   }
 
+  // MEMOISED, because render() runs once a second and this is a simulation.
+  // The loop is O(actions) -- typically a few thousand, up to the cap -- with a
+  // cost computation per iteration, and none of its inputs change between most
+  // ticks. Re-running it every second was a main-thread cost for no new answer.
+  //
+  // Gold is quantised into the key rather than used raw: it moves continuously
+  // while a session runs, so keying on the exact figure would miss every cache
+  // hit and the memo would be decoration. A thousandth of the current value is
+  // far below what changes any displayed number.
+  let projCache = null;
+  function projectionKey(level, gold, rate, actions) {
+    const goldBucket = gold === 0 ? 0 : Math.round(gold / Math.max(1, Math.abs(gold) / 1000));
+    return [level, goldBucket, rate, actions, overnightActions].join('|');
+  }
+
   function projectGold() {
     const rate = effectiveRate();
     if (!rate) return { blocked: 'no gold rate measured yet' };
     const base = remainingActionsForProjection();
     if (base === null) return { blocked: 'set a stop-at figure to project from' };
-    const actions = base + Math.max(0, overnightActions);
+    // The overnight allowance tops up a run that is STILL GOING. Adding it to a
+    // session already past its stop point projected 860 actions of earnings for
+    // a run with nothing left in it.
+    const actions = base > 0 ? base + Math.max(0, overnightActions) : 0;
     const flat = actions * rate;
 
     const gold = goldSnapshot();
@@ -1474,30 +1504,11 @@
     const boost0 = 1 + petSlotBoostPercent(lastSync.level);
     if (!(boost0 > 0)) return { flat, actions, blocked: 'slot boost unavailable' };
     const rawPct = mergedPct / boost0;
+    const key = projectionKey(lastSync.level, gold.value, rate, actions);
+    if (projCache && projCache.key === key) return { flat, actions, sim: projCache.sim };
     const sim = simulateUpgradePath(actions, lastSync.level, gold.value, rate, rawPct, mergedPct);
+    projCache = { key, sim };
     return { flat, actions, sim };
-  }
-
-  // WHERE THE ALARM ACTUALLY RINGS, said out loud.
-  //
-  // Today: this browser tab, always. The Companion is designed to take it over
-  // (server/README.md §8.2) precisely because a throttled or muted background
-  // tab is the alarm's one real failure mode -- but that capability is not
-  // built, so this reports the situation instead of offering a switch that
-  // would do nothing. It turns into a real toggle when the Companion starts
-  // advertising an alarm capability, and the check below is what will notice.
-  function companionAlarmAvailable() {
-    const st = Core.jobs && Core.jobs.state;
-    const caps = st && st.health && st.health.capabilities;
-    return Array.isArray(caps) && caps.indexOf('alarm') !== -1;
-  }
-
-  function renderCompanionRow() {
-    if (!ui.companionRow) return;
-    setText(ui.companionRow, companionAlarmAvailable()
-      ? 'The Companion is running and can take the alarm over.'
-      : 'Ringing in this browser. The Companion could take this over so a throttled '
-        + 'tab cannot mute it \u2014 that part is designed but not built yet.');
   }
 
   function renderProjection() {
@@ -1507,20 +1518,27 @@
     if (p.sim) {
       setText(ui.projUpgrade, formatGold(p.sim.earned));
       setText(ui.projUpgradeNote, p.sim.upgrades === 0
-        ? 'no upgrade becomes affordable in that time'
-        : `${p.sim.upgrades} upgrade${p.sim.upgrades === 1 ? '' : 's'} taken, `
-          + `${formatGold(p.sim.spent)} spent, ending at slot ${p.sim.endLevel} `
-          + `with ${formatGold(p.sim.endGold)} banked`);
+        ? 'no upgrade affordable in time'
+        : `${p.sim.upgrades} upgrade${p.sim.upgrades === 1 ? '' : 's'} · `
+          + `${formatGold(p.sim.spent)} spent · slot ${p.sim.endLevel} · `
+          + `${formatGold(p.sim.endGold)} left`);
     } else {
       setText(ui.projUpgrade, '\u2014');
       setText(ui.projUpgradeNote, p.blocked ? 'needs ' + p.blocked : '');
     }
+    // The caveat moved to the hover. It still has to be SAID -- the overnight
+    // figure is an assumption and a number built on one should admit it -- but
+    // it does not have to occupy two lines under every estimate to do so.
     setText(ui.projNote, p.actions == null ? ''
-      : `over ${p.actions.toLocaleString()} actions`
-        + (overnightActions > 0 ? ` (includes +${overnightActions} for the overnight reset \u2014 an assumption, editable in Settings)` : ''));
+      : `${p.actions.toLocaleString()} actions`
+        + (overnightActions > 0 && p.actions > 0 ? ` \u00b7 incl. +${overnightActions} overnight` : ''));
+    setAttr(ui.projNote, 'title', overnightActions > 0
+      ? `Includes ${overnightActions} actions for the overnight daily reset. That is an assumption, not a measurement \u2014 change it in this module's Settings tab.`
+      : '');
   }
 
   function masterTick() {
+    syncCompanionAlarm();
     if (runState === 'running') {
       const st = runStatus();
       if (st.done) {
@@ -1547,6 +1565,59 @@
   let windowHandle = null; // Core.createWindow(...) — owns geometry, drag, resize, chrome
   let activity = null;     // Core.ui.activity(...) — the module's own record of what it did
   let cadenceNode = null;  // the alarm-cadence rows, adopted by the Settings pane
+
+  // ---- the Companion delegation (Core v12) ----
+  //
+  // The browser alarm is not replaced, it is SHADOWED. Both stay armed: the
+  // Companion because it can make a noise a throttled tab cannot, and the
+  // browser because the Companion may not be running, may be stopped
+  // mid-session, or may be on a machine that goes to sleep.
+  //
+  // Double-ringing is prevented at the point of noise rather than by choosing
+  // one owner up front -- see checkTrackerReady. Choosing an owner would mean
+  // getting it wrong exactly when the Companion disappears, which is the case
+  // the delegation exists for.
+  let companionAlarm = null;
+  let lastPushedEtaMs = null;
+
+  function companionMode() {
+    return companionAlarm ? companionAlarm.mode : 'browser';
+  }
+
+  // Pushed whenever the deadline MOVES, not on a schedule: the Companion's
+  // reminder is idempotent by id, so re-registering replaces rather than
+  // stacks, and a re-push costs one request against a local socket.
+  function syncCompanionAlarm() {
+    if (!companionAlarm) return;
+    const eta = (runState === 'running' && trackerEtaMs !== null) ? trackerEtaMs : null;
+    if (eta === lastPushedEtaMs) return;
+    lastPushedEtaMs = eta;
+    if (eta === null) {
+      companionAlarm.push((api) => api.request('/reminders/' + encodeURIComponent(REMINDER_ID),
+        { method: 'DELETE' }));
+      return;
+    }
+    companionAlarm.push(async (api) => {
+      // A DECISION, already made. The Companion is told when and what, never
+      // the gold rate and the cost -- duplicating that model across the process
+      // boundary is how the two halves start disagreeing about the answer.
+      const res = await api.request('/reminders', {
+        method: 'POST',
+        body: {
+          id: REMINDER_ID,
+          atMs: eta,
+          title: 'Pet slot upgrade ready',
+          body: lastSync.level !== null
+            ? `Slot ${lastSync.level} \u2192 ${lastSync.level + 1} is affordable.`
+            : 'Your combat pet slot upgrade is affordable.',
+          source: 'Apoz Core: Pet Slot Alarm',
+        },
+      });
+      if (!res.ok) throw new Error('the Companion refused the reminder (HTTP ' + res.status + ')');
+      say('done', 'Alarm handed to the Companion \u2014 it will ring even if this tab is throttled.');
+    });
+  }
+  const REMINDER_ID = 'eta-tracker:pet-slot';
   let rateNode = null;     // the manual rate override, likewise
 
   // say(level, text) — one call site for every "tell the user what happened".
@@ -1612,6 +1683,7 @@
         border-radius: var(--apoz-r-sm); padding: 3px 5px; width: 70px; box-sizing: border-box;
         font: inherit; font-variant-numeric: tabular-nums; }
       #qett-gold-rate { width: 130px; }
+      .apoz-ui-rows > .k[data-tooltip], .apoz-ui-rows > .v[data-tooltip] { cursor: help; }
       .qett-info-icon { display: inline-flex; align-items: center; justify-content: center;
         opacity: var(--apoz-em-muted); cursor: help; margin-left: var(--apoz-s2); position: relative; }
       .qett-info-icon:hover { opacity: 1; }
@@ -1630,16 +1702,16 @@
 
       /* The commit button sits WITH the input it commits. It used to be alone
          on a right-aligned row below, connected to nothing. */
-      .qett-setter-inline { display: flex; align-items: center; gap: var(--apoz-s2); }
-      .qett-setter-inline input { width: 5.5em; flex: none; }
+      /* SPECIFICITY, not luck. Core's .apoz-ui-rows input sets width:100% and
+         this sets 5.5em -- both (0,1,1), so the winner was decided by which
+         stylesheet was appended last, which depends on which module built its
+         panel first. When Core won, the input filled the cell and pushed the
+         Set button over the unit label beside it. Two classes beats one, in
+         every load order. */
+      .apoz-ui-rows .qett-setter-inline { display: flex; align-items: center; gap: var(--apoz-s2); }
+      .apoz-ui-rows .qett-setter-inline input { width: 4.5em; flex: none; }
+      .apoz-ui-rows .qett-setter-inline button { flex: none; }
 
-      /* The projections are a READOUT, not a control, so they sit under a
-         quiet caption rather than in a group of their own -- the Session box
-         was already asked to take less room, not more. */
-      .qett-proj { margin-top: var(--apoz-s3); padding-top: var(--apoz-s3);
-        border-top: 1px solid color-mix(in srgb, var(--apoz-border, var(--border)) 55%, transparent); }
-      .qett-proj-head { font-size: var(--apoz-fs-micro); text-transform: uppercase;
-        letter-spacing: .05em; opacity: var(--apoz-em-faint); }
 
       /* Irrelevant right now, not gone. Dimming keeps the panel's shape stable
          so nothing jumps as the state changes -- hiding them would reflow the
@@ -1717,43 +1789,48 @@
         <div id="qett-readiness" class="qett-notice" hidden></div>
 
         <div class="apoz-ui-group">
-          <div class="apoz-ui-group-label">Session<span class="qett-info-icon"
-            data-tooltip="Counts down to the party's own remaining actions, so it ends when the party runs out rather than after a fixed number of your own. If that reading is unavailable it falls back to counting your actions instead, and says so."
-            data-tooltip-wide><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
+          <div class="apoz-ui-group-label">Session</div>
           <div class="apoz-ui-rows">
-            <span class="k">Stop at</span>
+            <span class="k" data-tooltip="Ends the session once the party has this many actions left. Falls back to counting your own actions if the party figure cannot be read." data-tooltip-wide>Stop at</span>
             <span class="qett-setter-inline">
               <input id="qett-duration" type="number" min="0" placeholder="&#8734;" />
               <button id="qett-duration-set" class="apoz-ui-btn" type="button">Set</button>
             </span>
             <span class="t">left</span>
           </div>
-          <div class="apoz-ui-rows qett-proj" id="qett-projection">
-            <span class="wide qett-proj-head">Gold by then, estimated</span>
-            <span class="k">Upgrading</span><span class="v" id="qett-proj-upgrade">&mdash;</span><span class="t"></span>
+        </div>
+
+        <div class="apoz-ui-group">
+          <div class="apoz-ui-group-label">Read</div>
+          <div class="apoz-ui-rows">
+            <span class="k">Slot</span>
+            <span class="v" id="qett-detail-level" data-tooltip="Your combat pet slot now, and the level it is saving toward.">-</span><span class="t"></span>
+            <span class="k">Gold</span>
+            <span class="v" data-tooltip="Gold you hold, against what the next slot upgrade costs." data-tooltip-wide><span id="qett-detail-gold">-</span>
+              <span id="qett-detail-gold-source" class="qett-hint-inline"></span></span><span class="t"></span>
+            <span class="k">Rate</span>
+            <span class="v" data-tooltip="Gold per action, measured from your Party Battle page." data-tooltip-wide><span id="qett-detail-rate">-</span>
+              <span id="qett-detail-rate-source" class="qett-hint-inline"></span></span><span class="t"></span>
+            <span class="k">Pets page</span>
+            <span class="v" id="qett-detail-synced" data-tooltip="When your Pets page was last read. The rate above carries its own age." data-tooltip-wide>never</span><span class="t"></span>
+          </div>
+        </div>
+
+        <div class="apoz-ui-group">
+          <div class="apoz-ui-group-label">Party gold estimate</div>
+          <div class="apoz-ui-rows">
+            <span class="k">At pace</span>
+            <span class="v" id="qett-proj-flat" data-tooltip="Remaining actions at your current rate. No upgrades, no compounding." data-tooltip-wide>-</span><span class="t"></span>
+            <span class="k">Reinvesting</span>
+            <span class="v" id="qett-proj-upgrade" data-tooltip="If you take each slot upgrade as soon as you can afford it. Each one costs gold now and raises the rate for every action after." data-tooltip-wide>-</span><span class="t"></span>
             <span class="wide qett-hint-inline" id="qett-proj-upgrade-note"></span>
-            <span class="k">No upgrades</span><span class="v" id="qett-proj-flat">&mdash;</span><span class="t"></span>
             <span class="wide qett-hint-inline" id="qett-proj-note"></span>
           </div>
         </div>
 
         <div class="apoz-ui-group">
-          <div class="apoz-ui-group-label">What it has read</div>
-          <div class="apoz-ui-rows">
-            <span class="k">Level</span><span class="v" id="qett-detail-level">-</span><span class="t"></span>
-            <span class="k">Gold</span><span class="v"><span id="qett-detail-gold">-</span>
-              <span id="qett-detail-gold-source" class="qett-hint-inline"></span></span><span class="t"></span>
-            <span class="k">Rate</span><span class="v"><span id="qett-detail-rate">-</span>
-              <span id="qett-detail-rate-source" class="qett-hint-inline"></span></span><span class="t"></span>
-            <span class="k">Synced</span><span class="v" id="qett-detail-synced">never</span><span class="t"></span>
-          </div>
-        </div>
-
-        <div class="apoz-ui-group">
           <div class="apoz-ui-group-label">Alarm<button type="button" class="apoz-ui-group-link"
-            id="qett-advanced-link">Cadence &#8599;</button><span class="qett-info-icon"
-            data-tooltip="The chime starts quick and slows down, then stops on its own so a wrong reading can never trap you. Everything about the cadence is on this module's Settings tab."
-            data-tooltip-wide><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
+            id="qett-advanced-link" data-tooltip="Gap between chimes, and when it gives up.">Cadence &#8599;</button></div>
           <div class="apoz-ui-rows">
             <label class="k" for="qett-alarm-volume">Volume</label>
             <input id="qett-alarm-volume" type="range" min="0" max="100" step="5" />
@@ -1767,19 +1844,17 @@
         </div>
 
         <div class="apoz-ui-group">
-          <div class="apoz-ui-group-label">While the tab is in the background<span class="qett-info-icon"
-            data-tooltip="This module runs entirely in your browser. It needs no server, no companion program and no account access - if you were handed this script on its own, the alarm works."
-            data-tooltip-wide><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
-          <div class="qett-hint-inline" id="qett-bg-explain">
-            The countdown stays correct in a hidden tab, because it reads the clock rather than
-            counting ticks. What a background tab does break is the SOUND: browsers throttle or
-            mute audio in tabs you are not looking at. These two are the way around that.
-          </div>
+          <div class="apoz-ui-group-label"
+            data-tooltip="Browsers mute or throttle audio in tabs you are not looking at. The countdown stays correct either way; these keep the SOUND on time."
+            data-tooltip-dev="Runs entirely in the browser -- no Companion needed. The countdown reads the clock rather than counting ticks, so timer throttling cannot drift it; only playback is at risk."
+            data-tooltip-wide>Background</div>
           <label class="qett-check" id="qett-notify-row">
             <input id="qett-notify" type="checkbox" /><span>Desktop notification when ready</span></label>
           <label class="qett-check" id="qett-keepawake-row">
             <input id="qett-keepawake" type="checkbox" /><span>Keep tab awake while running</span></label>
-          <div class="qett-hint-inline" id="qett-companion-row"></div>
+          <div id="qett-companion-row"></div>
+          <label class="qett-check" id="qett-companion-toggle-row">
+            <input id="qett-companion-toggle" type="checkbox" /><span>Ring through the Companion when it is running</span></label>
           <div id="qett-bg-note" class="qett-hint-inline"></div>
         </div>
 
@@ -1869,7 +1944,21 @@
     ui.projUpgradeNote = content.querySelector('#qett-proj-upgrade-note');
     ui.projFlat = content.querySelector('#qett-proj-flat');
     ui.projNote = content.querySelector('#qett-proj-note');
-    ui.companionRow = content.querySelector('#qett-companion-row');
+    ui.companionToggle = content.querySelector('#qett-companion-toggle');
+    if (ui.companionToggle) {
+      ui.companionToggle.checked = companionAlarm ? companionAlarm.enabled : false;
+      ui.companionToggle.disabled = !companionAlarm;
+      ui.companionToggle.addEventListener('change', () => {
+        if (!companionAlarm) return;
+        companionAlarm.setEnabled(ui.companionToggle.checked);
+        lastPushedEtaMs = null;
+        syncCompanionAlarm();
+        say(ui.companionToggle.checked ? 'done' : 'stopped',
+          ui.companionToggle.checked
+            ? 'Alarm will use the Companion when it is running.'
+            : 'Alarm will stay in this browser.');
+      });
+    }
     ui.alarmVolumeOut = content.querySelector('#qett-alarm-volume-out');
     ui.alarmFirst = content.querySelector('#qett-alarm-first');
     ui.alarmMax = content.querySelector('#qett-alarm-max');
@@ -1972,6 +2061,27 @@
       });
     }
 
+    // Guarded like every optional Core API: an older Core beneath a newer
+    // module is a state real users reach, and without it the module simply has
+    // no delegation and keeps its browser alarm.
+    if (Core.companion && typeof Core.companion.feature === 'function') {
+      companionAlarm = Core.companion.feature({
+        id: 'eta-tracker.alarm',
+        capability: 'remind',
+        label: 'The alarm',
+        // TRUE, and it is the important half: the browser alarm is a real
+        // fallback, not a stub, so losing the Companion costs reliability
+        // rather than the feature.
+        fallback: true,
+        onModeChange: () => { lastPushedEtaMs = null; syncCompanionAlarm(); },
+      });
+      // appendChild into the placeholder rather than replaceWith on it: the
+      // shared DOM stub implements the former and not the latter, and a render
+      // path that only works in a real browser is one nothing tests.
+      const host = content.querySelector('#qett-companion-row');
+      if (host && companionAlarm) host.appendChild(companionAlarm.el);
+    }
+
     // THE ACTIVITY STRIP (Core v11). Guarded, because an older Core beneath a
     // newer module is a state real users reach — and this module degrades to
     // exactly what it did before if the API is absent, rather than throwing.
@@ -1996,7 +2106,7 @@
       // group existed, so the panel opened with a scrollbar it did not need.
       // If you add or remove a group, RE-COUNT here rather than nudging the
       // number until it looks right; nudging is how it went stale both times.
-      minSize: { w: 360, h: 700 },
+      minSize: { w: 380, h: 665 },
       settingsTab: MODULE_ID,
       content,
       onClose: () => togglePanel(false),
@@ -2027,6 +2137,11 @@
 
   function togglePanel(force) {
     const show = force !== undefined ? force : windowHandle.el.hidden;
+    // Collapse the activity strip on the way DOWN. Expanding it grows the
+    // window, and growing the window trips createWindow's persisting
+    // ResizeObserver -- so closing while expanded banked the extra height into
+    // saved geometry and every open/expand/close cycle stacked another one.
+    if (!show && activity && typeof activity.collapse === 'function') activity.collapse();
     if (show) windowHandle.open(); else windowHandle.close();
     panelOpen = show;
     Core.setOpen(MODULE_ID, show);

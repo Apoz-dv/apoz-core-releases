@@ -1,22 +1,22 @@
 {
   "channel": "live",
-  "generated": "2026-09-09T05:12:07.663Z",
+  "generated": "2026-09-09T11:17:15.123Z",
   "core": {
-    "version": "6.12.0",
+    "version": "6.13.0",
     "url": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/apoz-core.user.js"
   },
   "modules": [
     {
       "id": "eta-tracker",
       "label": "Combat Slot ETA Tracker",
-      "version": "4.10.0",
+      "version": "4.11.0",
       "url": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/eta-tracker.user.js",
       "notes": ""
     },
     {
       "id": "fighter-allocator",
       "label": "Fighter Allocator",
-      "version": "1.10.0",
+      "version": "1.11.0",
       "url": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/fighter-allocator.user.js",
       "notes": ""
     }

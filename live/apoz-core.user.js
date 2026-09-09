@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.12.0
+// @version      6.13.0
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.12.0",
+    "version": "6.13.0",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -390,7 +390,14 @@
     const devIcons = [];
     function syncDevIcons() {
       const on = getSetting('showDevTooltips');
-      for (const el of devIcons) el.hidden = !on;
+      // Pruned on every sync. A panel that rebuilds its content leaves its old
+      // icons in this array holding detached nodes alive, and the list only
+      // ever grew. isConnected is the cheapest correct test for "still on the
+      // page", and this runs rarely enough that the filter costs nothing.
+      for (let i = devIcons.length - 1; i >= 0; i--) {
+        if (devIcons[i].isConnected === false) devIcons.splice(i, 1);
+        else devIcons[i].hidden = !on;
+      }
     }
 
     let tipEl = null;
@@ -1343,6 +1350,25 @@
           line-height: 1.1; font-variant-numeric: tabular-nums; }
         .apoz-ui-answer-sub { font-size: var(--apoz-fs-control); opacity: var(--apoz-em-muted); }
 
+        /* ---- delegation status: WHERE a feature is running ----
+           Every delegated feature carries one of these. It is not decoration:
+           the whole risk of delegation is a feature quietly running somewhere
+           other than you think, so the line is always present and always says
+           which side is doing the work. */
+        .apoz-ui-delegation { display: flex; align-items: center; gap: var(--apoz-s3);
+          font-size: var(--apoz-fs-control); opacity: var(--apoz-em-normal); }
+        .apoz-ui-delegation-dot { width: 6px; height: 6px; border-radius: 50%; flex: none;
+          background: currentColor; opacity: var(--apoz-em-faint); }
+        .apoz-ui-delegation-dot.on { background: var(--apoz-success); opacity: 1; }
+        .apoz-ui-delegation-dot.warn { background: var(--apoz-warn); opacity: 1; }
+        .apoz-ui-delegation-dot.off { background: none;
+          box-shadow: inset 0 0 0 1px currentColor; opacity: var(--apoz-em-faint); }
+        .apoz-ui-delegation-text { flex: 1; min-width: 0; line-height: 1.35; }
+        .apoz-ui-delegation-open { flex: none; background: none; border: none;
+          color: var(--apoz-primary); font: inherit; font-size: var(--apoz-fs-caption);
+          cursor: pointer; padding: 0; }
+        .apoz-ui-delegation-open:hover { text-decoration: underline; }
+
         /* ---- activity strip ---- */
         .apoz-ui-activity { margin: auto -11px -10px; border-top: 1px solid var(--apoz-border);
           background: color-mix(in srgb, var(--apoz-card) 94%, #000); flex: none; }
@@ -2079,6 +2105,23 @@
             };
           },
           clear() { entries.length = 0; openBusy = null; paint(); },
+          // Called by a module from its own close path. Expanding grows the
+          // window, and growing it trips createWindow's persisting
+          // ResizeObserver -- so closing while expanded BANKED the extra
+          // height into saved geometry, and each open/expand/close cycle
+          // stacked another one. Collapsing first gives it back.
+          collapse() {
+            if (!expanded) return;
+            expanded = false;
+            render();
+            if (!grownBy) return;
+            const win = el.closest && el.closest('.apoz-window');
+            if (win) {
+              const r = win.getBoundingClientRect();
+              if (r.height) win.style.height = Math.max(0, r.height - grownBy) + 'px';
+            }
+            grownBy = 0;
+          },
           dispose() {
             if (openBusy) console.warn('[ApozCore] activity strip disposed with "' + openBusy.text + '" still in flight — that is a module bug: every busy() must be resolved.');
             if (tick) clearInterval(tick);
@@ -2088,8 +2131,15 @@
         // Ages go stale silently, which is the one way this component could
         // lie. Cheap: one interval, one frame-batched write, and only the
         // relative-time text can change.
+        // OWNED BY DEFAULT. This used to register teardown only when a caller
+        // passed a scope, and neither module did -- so the interval ran for the
+        // life of the page and dispose() was never reached, including after the
+        // user disabled the module, which is meant to stop everything. That is
+        // precisely the leak shape createScope exists to prevent, so the
+        // fallback is coreScope rather than nothing.
         const tick = setInterval(paint, 15000);
-        if (spec.scope && typeof spec.scope.add === 'function') spec.scope.add(() => handle.dispose());
+        const owner = (spec.scope && typeof spec.scope.add === 'function') ? spec.scope : coreScope;
+        owner.add(() => handle.dispose());
         render();
         return handle;
       },
@@ -2101,7 +2151,15 @@
         row.className = 'apoz-ui-input-row';
         const label = document.createElement('label');
         label.textContent = spec.label;
-        if (spec.info) label.appendChild(ui.infoIcon(spec.info));
+        // ONE icon carrying BOTH tiers, rather than a second icon beside it.
+        // The developer half is invisible until the setting is on, so a second
+        // marker would be an empty slot most of the time -- and the whole point
+        // of the tier is fewer things on screen, not more.
+        if (spec.info || spec.devInfo) {
+          const icon = ui.infoIcon(spec.info || '');
+          if (spec.devInfo) icon.setAttribute('data-tooltip-dev', spec.devInfo);
+          label.appendChild(icon);
+        }
         const input = document.createElement(spec.type === 'select' ? 'select' : 'input');
         if (spec.type && spec.type !== 'select') input.type = spec.type;
         if (spec.type === 'select' && spec.options) {
@@ -2668,6 +2726,12 @@
     // settings are coming (see the note in openSettingsWindow's body).
     let settingsHandle = null;
     let settingsUi = null;
+    // SEEDED, not zero. These start as the size the window is actually created
+    // at, so the "size setting changed" branch in openSettingsWindow does not
+    // fire on the FIRST open of every page load -- which it did, because 0
+    // never equals the configured width, and that branch calls resetFull(),
+    // which throws away the position you dragged it to. Geometry persistence
+    // for this window was effectively off.
     let settingsMinW = 0, settingsMinH = 0;
     // ---- the jobs window (v11) ----
     //
@@ -2796,6 +2860,8 @@
           id: 'apoz-core-settings', title: 'Apoz Core Settings',
           resizable: false, minSize: { w: settingsSize().w, h: settingsSize().h },
         });
+        settingsMinW = settingsSize().w;
+        settingsMinH = settingsSize().h;
         settingsUi = buildSettingsContent();
         settingsHandle.setContent(settingsUi.root);
       }
@@ -2829,6 +2895,16 @@
       paneHost.className = 'apoz-settings-panes';
       root.appendChild(side);
       root.appendChild(paneHost);
+
+      // EVERY CONTROL REGISTERS HOW TO RE-READ ITSELF. "Reset to default"
+      // used to re-sync a hand-written list of three inputs, so the two added
+      // afterwards (window size, developer notes) reset their STORED value and
+      // left the control showing the old one -- which reads as the button
+      // doing nothing. A list you have to remember to append to is a list that
+      // goes stale; this one cannot, because adding a control is what adds its
+      // syncer.
+      const syncers = [];
+      const onReset = (fn) => { syncers.push(fn); return fn; };
 
       const tabs = [];
       let activeTabId = null;
@@ -2969,6 +3045,7 @@
       ));
       themeGroup.appendChild(themeSelectRow);
       category(paneGeneral, 'Appearance');
+      onReset(() => { themeSelect.value = getSetting('liveAdaptTheme') ? 'auto' : 'apozTurquoise'; });
       paneGeneral.appendChild(themeGroup);
 
       // ---- windows ----
@@ -3014,9 +3091,9 @@
         options: Object.keys(SETTINGS_SIZES).map((k) => ({
           value: k, label: `${SETTINGS_SIZES[k].label} (${SETTINGS_SIZES[k].w}x${SETTINGS_SIZES[k].h})`,
         })),
-        info: 'This window stays non-resizable — its panes are laid out for a known width — so instead of a '
-          + 'drag handle you pick from sizes that were designed. If one ever leaves the window awkward, '
-          + '"Reset window positions" in the menu puts it back to default.',
+        info: 'Pick a size. "Reset window positions" in the menu puts it back.',
+        devInfo: 'Non-resizable on purpose: the panes are laid out for a known width, so the choice is '
+          + 'between designed sizes rather than a free drag handle.',
         onChange: (v) => {
           setSetting('settingsSize', v);
           const want = settingsSize();
@@ -3041,16 +3118,29 @@
       devGroup.className = 'apoz-ui-group';
       devGroup.appendChild(Core_ui_toggleRow({
         label: 'Show developer notes in hover text',
-        info: 'A lot of the explanation in this overlay is really addressed to whoever maintains it: '
-          + 'why a control is shaped the way it is, which bug produced it, what a fallback does. '
-          + 'That is worth keeping and is not worth reading every time you hover a button, so it '
-          + 'lives on a second tier. Turn this on and it appears, tinted, under the ordinary text.',
+        info: 'Adds a tinted second half to hover text, explaining why things work the way they do.',
         checked: getSetting('showDevTooltips'),
         onChange: (v) => setSetting('showDevTooltips', v),
       }));
+      onReset(() => {
+        const dv = devGroup.querySelector('input[type="checkbox"]');
+        if (dv) dv.checked = !!getSetting('showDevTooltips');
+      });
       paneGeneral.appendChild(devGroup);
 
       category(paneGeneral, 'Windows');
+      onReset(() => {
+        const rz = resizeToggle.querySelector('input[type="checkbox"]');
+        if (rz) rz.checked = !!getSetting('windowResizingEnabled');
+        const rl = reloadRow.querySelector('input[type="checkbox"]');
+        if (rl) rl.checked = !!getSetting('autoShowOnReload');
+        if (sizeRow && sizeRow._input) sizeRow._input.value = getSetting('settingsSize');
+        // The window itself has to follow, or the select says Default while
+        // the panel stays the size it was.
+        const want = settingsSize();
+        settingsMinW = want.w; settingsMinH = want.h;
+        if (settingsHandle) { settingsHandle.setMinSize(want); settingsHandle.resetFull(); }
+      });
       paneGeneral.appendChild(windowsGroup);
 
       // ---- job host (v11) ----
@@ -3313,22 +3403,18 @@
       resetSettingsBtn.addEventListener('click', () => {
         setNumberLocaleOverride(null);
         for (const key of Object.keys(SETTINGS_DEFAULTS)) setSetting(key, SETTINGS_DEFAULTS[key]);
-        themeSelect.value = getSetting('liveAdaptTheme') ? 'auto' : 'apozTurquoise';
-        const resizeInput = resizeToggle.querySelector('input[type="checkbox"]');
-        if (resizeInput) resizeInput.checked = !!getSetting('windowResizingEnabled');
-        const reloadInput = reloadRow.querySelector('input[type="checkbox"]');
-        if (reloadInput) reloadInput.checked = !!getSetting('autoShowOnReload');
+        for (const fn of syncers) { try { fn(); } catch (e) { console.error('[ApozCore] reset sync', e); } }
         settingsUi.renderNumberFormat();
         toast('Settings reset to default.', { type: 'success', duration: 3000 });
       });
       resetSettingsRow.appendChild(resetSettingsBtn);
       paneGeneral.appendChild(resetSettingsRow);
 
-      // ---- more settings, not yet built ----
-      const futureNote = document.createElement('div');
-      futureNote.style.cssText = 'margin-top:10px; font-size:10px; opacity:.5; line-height:1.4;';
-      futureNote.textContent = 'More settings are planned (see INSTRUMENTATION.md/HANDOFF.md for the running list) — this panel will grow.';
-      paneGeneral.appendChild(futureNote);
+      // The "more settings are planned, see INSTRUMENTATION.md" note that used
+      // to sit here is gone. It was true and it was addressed to whoever
+      // maintains this, not to anyone using it -- a user cannot act on a
+      // roadmap, and pointing them at a repo file they do not have is worse
+      // than silence. The running list still lives in HANDOFF.md.
 
       // ---- module tabs ----
       //
@@ -4060,6 +4146,12 @@
           health: null, at: Date.now(),
         };
       }
+      // ONE place, on every outcome. A Companion that starts or stops
+      // mid-session moves every delegated feature without the user touching
+      // anything -- which is what makes "it just works when running" and "it
+      // fell back and said so" the same code path rather than two.
+      syncCompanionFeatures();
+      companionLastReady = hostState.state;
       return hostState;
     }
 
@@ -4126,6 +4218,178 @@
       });
       return { done, stop };
     }
+
+    // ====================================================================
+    // ---- COMPANION FEATURES — the delegation pattern (v12) --------------
+    // ====================================================================
+    //
+    // The first thing a module wanted from the Companion was not a job. It was
+    // an ALARM: something outside the browser that can make a noise when a
+    // throttled background tab will not. That is a different shape from
+    // submit-and-await, and it will not be the last of its kind, so it gets a
+    // pattern rather than one module's bespoke wiring.
+    //
+    // ── THE RULE EVERY DELEGATED FEATURE FOLLOWS ────────────────────────
+    //
+    // A feature that CAN run in the browser must keep working when the
+    // Companion is absent, and must SAY which way it is running. A feature
+    // that genuinely cannot must say so up front instead of failing quietly.
+    // Those are the only two honest shapes, and `fallback` picks between them.
+    //
+    // The failure this prevents is specific: a user turns something on, the
+    // Companion is not running, and the feature silently does nothing. Nothing
+    // in the UI is wrong, nothing errors, and they find out when the alarm they
+    // relied on never went off.
+    //
+    // ── WHY THE BROWSER KEEPS THE THINKING ──────────────────────────────
+    //
+    // A delegated feature hands over a DECISION ALREADY MADE — a timestamp, a
+    // title, a line of text. It never hands over the inputs and asks the
+    // Companion to work it out. The game data lives in the tab; duplicating the
+    // model across a process boundary is how the two halves start disagreeing,
+    // and neither side would know which was right.
+    //
+    // ── AND THE BOUNDARY IS UNCHANGED ───────────────────────────────────
+    //
+    // `engine/jobs/protocol.js` is closed under advice. Delegation does not
+    // widen that: a reminder spends nothing, starts nothing, commits nothing.
+    // Anything that WOULD act on the account is not a candidate for this
+    // pattern, and CLAUDE.md rule 4 still decides that, not this file.
+    const companionFeatures = [];
+    let companionLastReady = null;
+
+    function companionHas(capability) {
+      const caps = hostState && hostState.health && hostState.health.capabilities;
+      return Array.isArray(caps) && caps.indexOf(capability) !== -1;
+    }
+    function companionReady(capability) {
+      return hostState.state === HOST_STATES.READY && companionHas(capability);
+    }
+
+    // Re-evaluated whenever the handshake changes, so a Companion that starts
+    // (or stops) mid-session moves every delegated feature without the user
+    // doing anything. This is what makes "it just works when it is running" and
+    // "it fell back and told me" the same code path.
+    function syncCompanionFeatures() {
+      for (const f of companionFeatures) {
+        try { f._sync(); } catch (e) { console.error('[ApozCore] companion feature sync', e); }
+      }
+    }
+
+    function makeCompanionFeature(spec) {
+      if (!spec || !spec.id || !spec.capability) {
+        console.error('[ApozCore] companion.feature needs { id, capability }');
+        return null;
+      }
+      const prefKey = 'apoz:companion:' + spec.id;
+      // Opt-in state is per FEATURE, not global: one module wanting the
+      // Companion says nothing about another, and a user who distrusts one
+      // delegation should not have to give up the rest.
+      let enabled = true;
+      try {
+        const raw = localStorage.getItem(prefKey);
+        if (raw !== null) enabled = raw === '1';
+      } catch (e) { /* private mode: default on, nothing persisted */ }
+
+      const el = document.createElement('div');
+      el.className = 'apoz-ui-delegation';
+      const dot = document.createElement('span');
+      dot.className = 'apoz-ui-delegation-dot';
+      const text = document.createElement('span');
+      text.className = 'apoz-ui-delegation-text';
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'apoz-ui-delegation-open';
+      openBtn.textContent = 'Companion \u2197';
+      openBtn.title = 'Open the Companion window';
+      openBtn.addEventListener('click', (e) => { e.stopPropagation(); openJobsWindow(); });
+      for (const n of [dot, text, openBtn]) el.appendChild(n);
+
+      const handle = {
+        el,
+        get enabled() { return enabled; },
+        get mode() {
+          if (!enabled) return 'browser';
+          return companionReady(spec.capability) ? 'companion' : 'browser';
+        },
+        // `fallback: false` means the feature has no in-browser form. Saying so
+        // is the whole of its honesty: the status line stops promising a
+        // fallback that does not exist and asks for the Companion instead.
+        get usable() {
+          return handle.mode === 'companion' || spec.fallback !== false;
+        },
+        setEnabled(v) {
+          enabled = !!v;
+          try { localStorage.setItem(prefKey, enabled ? '1' : '0'); } catch (e) { /* ignore */ }
+          handle._sync();
+        },
+        // Runs `fn` only while actually delegating, and reports rather than
+        // throwing: a Companion that goes away mid-session must degrade, not
+        // break the module that was using it.
+        async push(fn) {
+          if (handle.mode !== 'companion') return false;
+          try { await fn(companionApi); return true; } catch (e) {
+            console.warn('[ApozCore] companion push failed for ' + spec.id, e);
+            handle._error = e.message || String(e);
+            handle._sync();
+            return false;
+          }
+        },
+        _error: null,
+        // The same sentence the status line shows. Exposed because a module may
+        // want to log it (the activity strip is the obvious consumer) and
+        // because asserting on rendered textContent means asserting on whatever
+        // the DOM stub happens to aggregate -- which is not the contract.
+        _status: '',
+        get statusText() { return handle._status; },
+        _sync() {
+          const mode = handle.mode;
+          const ready = companionReady(spec.capability);
+          let cls = 'apoz-ui-delegation-dot';
+          let msg;
+          if (mode === 'companion') {
+            cls += ' on';
+            msg = (spec.label || 'This') + ' is running in the Companion.';
+            handle._error = null;
+          } else if (!enabled) {
+            cls += ' off';
+            msg = spec.fallback === false
+              ? (spec.label || 'This') + ' needs the Companion, and you have it turned off here.'
+              : (spec.label || 'This') + ' is running in this browser by your choice.';
+          } else if (spec.fallback === false) {
+            cls += ' warn';
+            msg = (spec.label || 'This') + ' needs the Companion running.';
+          } else {
+            cls += ' warn';
+            msg = (spec.label || 'This') + ' is running in this browser \u2014 '
+              + (hostState.state === HOST_STATES.READY
+                ? 'this Companion is too old for it.'
+                : 'the Companion is not running.');
+          }
+          if (handle._error) msg += ' Last attempt failed: ' + handle._error;
+          handle._status = msg;
+          domWrite.attr(dot, 'class', cls);
+          domWrite.text(text, msg);
+          openBtn.hidden = ready && mode === 'companion';
+          if (spec.onModeChange && companionLastReady !== null) {
+            try { spec.onModeChange(mode); } catch (e) { console.error(e); }
+          }
+        },
+      };
+      companionFeatures.push(handle);
+      handle._sync();
+      return handle;
+    }
+
+    const companionApi = {
+      get state() { return hostState.state; },
+      has: companionHas,
+      ready: companionReady,
+      check: checkHost,
+      open: () => openJobsWindow(),
+      feature: makeCompanionFeature,
+      request: (pathname, opts) => hostFetch(pathname, opts),
+    };
 
     const jobs = {
       STATES: HOST_STATES,
@@ -4426,6 +4690,8 @@
       // v11: a module reports WHAT IT IS DOING, so the nav can answer
       // "is my tracker still running?" without opening anything.
       setState, openSettings,
+      // v12: delegating a feature to the Companion, with an honest fallback.
+      companion: companionApi,
       get moduleStates() { return MODULE_STATES.slice(); },
       // shared window framework (v6) — every module's panel and every
       // reusable table/modal/tooltip/input-row is built from these, so there

@@ -2,7 +2,7 @@
 // @name         Apoz Core: Fighter Allocator
 // @namespace    apoz-core
 // @author       Apoz
-// @version      1.10.0
+// @version      1.11.0
 // @description  Apoz Core module (requires "Apoz Core"). Allocates gold-purchased fighter stats (Health/Damage/Hit/Dodge/Defense/Crit Damage) across your 6 fighters. Class-keyed profiles with a full table (category, classes, date, source), World Boss-aware math (Hit target from boss level, exact Damage/Crit Damage split), and two-way import/export with the community "Fighter Optimizer" gold-plan format. Fills the game's own stat inputs; never auto-clicks Save Preset.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -57,7 +57,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("fighter-allocator", "1.10.0-dev", function (Core) {
+  })("fighter-allocator", "1.11.0-dev", function (Core) {
 
 
   const MODULE_ID = 'fighter-allocator';
@@ -2724,7 +2724,12 @@
   // result. setStatus() (used by loadProfileFlow) overwrites this during an
   // actual allocation and callers restore it afterward via this function.
   function updateAmbientStatus() {
-    if (!ui.statusBar) return;
+    // ui.contextLine, not ui.statusBar. The status bar became the activity
+    // strip plus this quieter line, and this guard was left pointing at the
+    // removed element -- so every call returned immediately and the page/gold
+    // readout never rendered at all, including the "not detected" prompt that
+    // tells you why nothing is working. Shipped that way in 1.10.0.
+    if (!ui.contextLine) return;
     const onFightersPage = liveLayout.length === 6 && !liveLayout.some((c) => !c);
     if (!onFightersPage) {
       setStatus('Fighters page not detected — open it to allocate a plan.', 'ambient');
@@ -2742,6 +2747,9 @@
       updateAmbientStatus();
       windowHandle.open();
     } else {
+      // See eta-tracker's identical call: an expanded strip grew the window,
+      // and closing while grown persisted that height into saved geometry.
+      if (activity && typeof activity.collapse === 'function') activity.collapse();
       windowHandle.close();
     }
     panelOpen = show;
