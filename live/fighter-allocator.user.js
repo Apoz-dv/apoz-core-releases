@@ -2,7 +2,7 @@
 // @name         Apoz Core: Fighter Allocator
 // @namespace    apoz-core
 // @author       Apoz
-// @version      1.9.0
+// @version      1.10.0
 // @description  Apoz Core module (requires "Apoz Core"). Allocates gold-purchased fighter stats (Health/Damage/Hit/Dodge/Defense/Crit Damage) across your 6 fighters. Class-keyed profiles with a full table (category, classes, date, source), World Boss-aware math (Hit target from boss level, exact Damage/Crit Damage split), and two-way import/export with the community "Fighter Optimizer" gold-plan format. Fills the game's own stat inputs; never auto-clicks Save Preset.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -57,7 +57,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("fighter-allocator", "1.9.0-dev", function (Core) {
+  })("fighter-allocator", "1.10.0-dev", function (Core) {
 
 
   const MODULE_ID = 'fighter-allocator';
@@ -78,6 +78,40 @@
     'Berserker', 'Paladin', 'Crusader', 'Sentinel', 'Bastion', 'Tank',
     'Knight', 'Wizard', 'Cavalry', 'Healer', 'Synchronizer', 'Hunter',
   ];
+
+  // AN EXPLICIT MAP, NOT A SLICE. Six of these classes share a first letter
+  // and three share their first two (Brawler / Bastion / Berserker), so any
+  // "take the first N characters" rule collides -- and a collision here does
+  // not look like a bug, it looks like two different fighters being the same
+  // one. Written out, then asserted unique at load, because the failure is
+  // silent and the assertion costs nothing.
+  //
+  // Assassin is ASN rather than the obvious three letters, deliberately.
+  const CLASS_ABBREV = {
+    'Warrior': 'WAR', 'Brawler': 'BRA', 'Priest': 'PRI', 'Assassin': 'ASN',
+    'Mage': 'MAG', 'Shadow Dancer': 'SD', 'Berserker': 'BSK', 'Paladin': 'PAL',
+    'Crusader': 'CRU', 'Sentinel': 'SEN', 'Bastion': 'BAS', 'Tank': 'TNK',
+    'Knight': 'KNI', 'Wizard': 'WIZ', 'Cavalry': 'CAV', 'Healer': 'HEA',
+    'Synchronizer': 'SYN', 'Hunter': 'HUN',
+  };
+  {
+    // Load-time, not test-time, because a module shipped with a collision is
+    // worse than one that refuses to start with a console line saying which.
+    const seen = new Set();
+    for (const cls of ALL_CLASSES) {
+      const a = CLASS_ABBREV[cls];
+      if (!a) console.error('[fighter-allocator] no abbreviation for class:', cls);
+      else if (seen.has(a)) console.error('[fighter-allocator] duplicate class abbreviation:', a, cls);
+      seen.add(a);
+    }
+  }
+
+  // Unknown classes fall back to their own name rather than a guess: an
+  // imported plan can name a class this build has never heard of, and showing
+  // it in full is the honest rendering of "I do not know what this is".
+  function abbrevClass(name) {
+    return CLASS_ABBREV[name] || name;
+  }
 
   const POSITIONS = ['Left Top', 'Left Middle', 'Left Bottom', 'Right Top', 'Right Middle', 'Right Bottom'];
 
@@ -1002,7 +1036,25 @@
         return categoryBadge(p.category);
       } },
       { key: 'classLayout', label: 'Classes (1→6)', info: 'Left Top → Left Middle → Left Bottom → Right Top → Right Middle → Right Bottom, the order fighters are attacked in.',
-        render: (p) => (p.classLayout && p.classLayout.length ? p.classLayout.join(', ') : Object.keys(p.stats).join(', ')) },
+        render: (p) => {
+          // Abbreviated, with the full name on Core's own tooltip rather than
+          // a native title -- this project replaced title on condensed UI so
+          // there is one hover mechanism, and Core's appears immediately where
+          // the native one lags about a second.
+          const names = (p.classLayout && p.classLayout.length)
+            ? p.classLayout : Object.keys(p.stats);
+          const wrap = document.createElement('span');
+          wrap.className = 'apoz-fa-classes';
+          names.forEach((n, i) => {
+            if (i) wrap.appendChild(document.createTextNode(' '));
+            const el = document.createElement('span');
+            el.className = 'apoz-fa-class';
+            el.textContent = abbrevClass(n);
+            el.setAttribute('data-tooltip', `${POSITIONS[i] || 'Position ' + (i + 1)} — ${n}`);
+            wrap.appendChild(el);
+          });
+          return wrap;
+        } },
       { key: 'source', label: 'Source', render: (p) => {
         if (ui.editingProfileId === p.id) {
           const input = document.createElement('input');
@@ -2528,11 +2580,19 @@
          SCROLL CEILING (max-height) is untouched on purpose — this only
          changes the floor. */
       .apoz-fa-table-scroll { overflow: auto; min-height: 220px; max-height: 420px; flex: 1; }
+      /* EMPTY, NOT FILLED. These drew a bar per cell tinted from --apoz-border,
+         which is a warm brown, so an empty table read as a stack of smudges --
+         reported as distracting, and fairly: a placeholder that draws
+         something looks like content that failed to load rather than like
+         room. The row keeps its height and its separator line, and nothing
+         else. The resting count (RESTING_ROWS) is what actually does the work
+         here; the bars were never the point. */
       .apoz-fa-ghost td { height: 22px; color: transparent; }
-      .apoz-fa-ghost td::after { content: ""; display: block; height: var(--apoz-s4);
-        border-radius: 3px; background: color-mix(in srgb, var(--apoz-border, var(--border)) 40%, transparent); }
-      .apoz-fa-ghost td:nth-child(2)::after { width: 55%; }
-      .apoz-fa-ghost td:nth-child(3)::after { width: 70%; }
+      /* Small-caps and tracking so an abbreviation reads as a deliberate
+         short form rather than a truncated word. */
+      .apoz-fa-classes { font-variant: small-caps; letter-spacing: .04em; white-space: nowrap; }
+      .apoz-fa-class { cursor: help; }
+      .apoz-fa-class:hover { color: var(--apoz-primary, var(--primary)); }
       .apoz-fa-hint { text-align: center; font-size: var(--apoz-fs-caption);
         opacity: var(--apoz-em-muted); padding: var(--apoz-s4) var(--apoz-s2) var(--apoz-s1);
         line-height: 1.5; }
@@ -2798,6 +2858,7 @@
         profiles: () => profiles,
         upsertProfile, deleteProfileHard, setArchived, duplicateProfile,
         detectAndNormalizeImport, exportNative, exportFriendFormat, importNumber,
+        CLASS_ABBREV, abbrevClass, ALL_CLASSES,
         resolveProfileAgainstLayout,
         bossDodgeAtLevel, hitTargetForBossLevel, hitChanceAt, expectedDamage,
         scanEquippedStatsViaFiber, readStatTotalFromCard, gearFromDisplayedTotal, equipmentTierMultiplier,

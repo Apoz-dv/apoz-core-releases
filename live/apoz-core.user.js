@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.11.0
+// @version      6.12.0
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.11.0",
+    "version": "6.12.0",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -123,6 +123,14 @@
       // which. Falls back to 'default' for any unknown value, so a hand-edited
       // or future key cannot produce a 0x0 panel.
       settingsSize: 'default',
+      // OFF by default, and the default is the whole point. A good deal of the
+      // explanation in this overlay is really addressed to whoever maintains
+      // it -- why a control is shaped the way it is, which bug produced it,
+      // what the fallback does -- and that content is genuinely useful, just
+      // not to someone who only wants to know what the button does. Rather
+      // than delete it or leave it padding every hover, it moves to a second
+      // tier that is invisible until asked for.
+      showDevTooltips: false,
     };
     const SETTINGS_SIZES = {
       compact: { w: 520, h: 460, label: 'Compact' },
@@ -141,6 +149,7 @@
       settings[key] = value;
       try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ }
       if (key === 'liveAdaptTheme') applyThemeMode();
+      if (key === 'showDevTooltips') syncDevIcons();
       // Every already-open window picks up an on/off flip immediately, not
       // only the next time it happens to be opened fresh.
       if (key === 'windowResizingEnabled') {
@@ -214,7 +223,10 @@
           --apoz-fs-control: 11px; /* buttons, field labels */
           --apoz-fs-body: 12px;    /* window base, table cells, menu items */
           --apoz-fs-title: 13px;   /* window and modal titles */
-          --apoz-fs-display: 24px; /* the ONE number a window exists to show */
+          /* 24px measured as too loud once a countdown sat in it every second.
+             Changed here rather than overridden per-module: it is the display
+             STEP, and a module that wants a quieter one wants the step quieter. */
+          --apoz-fs-display: 20px; /* the ONE number a window exists to show */
           /* space */
           --apoz-s1: 2px; --apoz-s2: 4px; --apoz-s3: 6px;
           --apoz-s4: 8px; --apoz-s5: 12px; --apoz-s6: 16px;
@@ -371,7 +383,19 @@
     // re-render, and per-element listeners are exactly the leak shape
     // INSTRUMENTATION §4.4 exists to stop. Two listeners, page-lifetime, owned
     // by coreScope.
+    // Weakly-held is not available here without WeakRef gymnastics for no
+    // gain: these are a handful of small spans that live as long as their
+    // window, and the alternative is a setting that only takes effect on the
+    // next panel build.
+    const devIcons = [];
+    function syncDevIcons() {
+      const on = getSetting('showDevTooltips');
+      for (const el of devIcons) el.hidden = !on;
+    }
+
     let tipEl = null;
+    let tipUserEl = null;
+    let tipDevEl = null;
     let tipAnchor = null;
 
     function hideTip() {
@@ -381,15 +405,31 @@
 
     function showTip(target) {
       const text = target.getAttribute('data-tooltip');
-      if (!text) return;
+      // The developer tier is not merely hidden when off -- it is not read at
+      // all, so an element carrying ONLY dev text is inert rather than showing
+      // an empty bubble.
+      const dev = getSetting('showDevTooltips') ? target.getAttribute('data-tooltip-dev') : null;
+      if (!text && !dev) return;
       if (!tipEl) {
         tipEl = document.createElement('div');
         tipEl.className = 'apoz-ui-tip';
         tipEl.hidden = true;
+        // Two parts rather than one string: the tiers are visually distinct,
+        // which they cannot be inside a single textContent.
+        tipUserEl = document.createElement('span');
+        tipDevEl = document.createElement('span');
+        tipDevEl.className = 'apoz-ui-tip-dev';
+        tipEl.appendChild(tipUserEl);
+        tipEl.appendChild(tipDevEl);
         document.body.appendChild(tipEl);
       }
       tipAnchor = target;
-      tipEl.textContent = text;
+      tipUserEl.textContent = text || '';
+      tipDevEl.textContent = dev || '';
+      tipDevEl.hidden = !dev;
+      // The bubble itself is tinted when it is carrying developer content, so
+      // the distinction survives a glance rather than needing to be read.
+      tipEl.className = 'apoz-ui-tip' + (dev ? ' apoz-ui-tip-hasdev' : '');
       // data-tooltip-wide is the only width control left. data-tooltip-right
       // is now a NO-OP and deliberately still accepted: it used to force the
       // bubble to the element's right edge, which is precisely the guess the
@@ -418,7 +458,7 @@
       // delegation needs the ones that do. `relatedTarget` tells us whether
       // the pointer actually left the anchor or merely crossed onto a child.
       scope.on(document, 'pointerover', (e) => {
-        const t = e.target && e.target.closest && e.target.closest('[data-tooltip]');
+        const t = e.target && e.target.closest && e.target.closest('[data-tooltip],[data-tooltip-dev]');
         if (!t) { if (tipAnchor) hideTip(); return; }
         if (t !== tipAnchor) showTip(t);
       });
@@ -437,7 +477,7 @@
       // Keyboard parity, now that focus is visible at all: a tooltip reachable
       // only by pointer is one a keyboard user cannot read.
       scope.on(document, 'focusin', (e) => {
-        const t = e.target && e.target.closest && e.target.closest('[data-tooltip]');
+        const t = e.target && e.target.closest && e.target.closest('[data-tooltip],[data-tooltip-dev]');
         if (t) showTip(t);
       });
       scope.on(document, 'focusout', hideTip);
@@ -1850,6 +1890,21 @@
       flushWrites() { scheduler.flushNow(); },
       get writeStats() { return scheduler.stats; },
       dom: domWrite,
+      // A marker that carries developer-tier explanation and DISAPPEARS when
+      // the setting is off -- rather than a dimmed or disabled icon, which
+      // would leave the clutter it exists to remove. Returns an element the
+      // caller appends wherever the explanation belongs.
+      devIcon(text) {
+        injectWindowStyleOnce();
+        const el = document.createElement('span');
+        el.className = 'apoz-ui-devicon';
+        el.textContent = '\u2699';
+        el.setAttribute('data-tooltip-dev', text);
+        el.setAttribute('data-tooltip-wide', '');
+        el.hidden = !getSetting('showDevTooltips');
+        devIcons.push(el);
+        return el;
+      },
       // ---- the activity strip (DESIGN.md §5) ----
       //
       // One line at the foot of a module window saying what the module last
@@ -1881,6 +1936,9 @@
         const entries = [];       // newest first
         let openBusy = null;
         let expanded = false;
+        // How much height this strip added to its window when expanded, so
+        // collapsing returns exactly that.
+        let grownBy = 0;
 
         const el = document.createElement('div');
         el.className = 'apoz-ui-activity';
@@ -1955,7 +2013,44 @@
           push(level, msg);
         }
 
-        head.addEventListener('click', () => { expanded = !expanded; render(); });
+        // EXPANDING SHOULD MAKE ROOM, not start a scrollbar. The strip sits at
+        // the foot of a window whose height is fixed by its saved geometry, so
+        // opening the history just pushed the body into overflow: you clicked
+        // to read something and got a scroll container instead.
+        //
+        // Only when the body was NOT already scrolling. If it was, the window
+        // is deliberately smaller than its content and growing it would
+        // override a size the user chose. Clamped against the viewport, and
+        // collapsing gives back exactly what expanding took rather than a
+        // guess -- hence grownBy.
+        head.addEventListener('click', () => {
+          const win = el.closest && el.closest('.apoz-window');
+          const body = win && win.querySelector('.apoz-window-body');
+          const wasOverflowing = body ? body.scrollHeight > body.clientHeight + 1 : true;
+          const collapsing = expanded;
+          expanded = !expanded;
+          render();
+          if (!win || !body) return;
+          if (collapsing) {
+            if (grownBy) {
+              const r = win.getBoundingClientRect();
+              win.style.height = Math.max(0, r.height - grownBy) + 'px';
+            }
+            grownBy = 0;
+            return;
+          }
+          if (wasOverflowing) return;
+          const grow = list.offsetHeight;
+          const vp = viewportRect();
+          const r = win.getBoundingClientRect();
+          if (!grow || !(vp.h > 0)) return;
+          const room = Math.max(0, vp.h - 8 - r.top);
+          const target = Math.min(r.height + grow, room);
+          if (target > r.height) {
+            grownBy = target - r.height;
+            win.style.height = target + 'px';
+          }
+        });
 
         const handle = {
           el,
@@ -2142,6 +2237,23 @@
            inherit from, contributes to no panel's scroll area, and can be
            flipped and clamped by the same pure helper the dropdown and every
            ui.menu already use. Same markup contract: any [data-tooltip]. */
+        /* THE DEVELOPER TIER. Same bubble, tinted, with its second half set
+           apart -- a separate popup would mean two things to position, two to
+           dismiss, and a hover that changes shape depending on a setting. The
+           accent border is what carries "this is not for you unless you asked
+           for it" at a glance. */
+        .apoz-ui-tip-hasdev { border-color: var(--apoz-primary); }
+        .apoz-ui-tip-dev { display: block; margin-top: var(--apoz-s3);
+          padding-top: var(--apoz-s3); border-top: 1px dashed var(--apoz-primary);
+          color: var(--apoz-primary); }
+        .apoz-ui-tip-dev[hidden] { display: none !important; }
+        /* An info icon that only exists in developer mode. Deliberately the
+           accent colour rather than the muted foreground every other icon
+           uses, so it is obvious which icons appeared because of a setting. */
+        .apoz-ui-devicon { color: var(--apoz-primary); opacity: var(--apoz-em-normal);
+          cursor: help; display: inline-flex; align-items: center;
+          font-size: var(--apoz-fs-caption); font-weight: 700; margin-left: var(--apoz-s2); }
+        .apoz-ui-devicon:hover { opacity: 1; }
         .apoz-ui-tip { position: fixed; z-index: 1002500; box-sizing: border-box;
           background: var(--apoz-solid-card); color: var(--apoz-solid-popover-foreground);
           border: 1px solid var(--apoz-solid-border); border-radius: var(--apoz-r-sm);
@@ -2169,9 +2281,14 @@
         /* DISABLED IS NOT DIM-ENABLED. A module that is off is struck from the
            list visually — lower opacity AND a hollow indicator AND its state
            column reading "off" — because "greyed" alone is the same signal an
-           idle-but-enabled module gives, and those are different things. */
-        .apoz-core-row:not(.apoz-core-row-enabled) { opacity: var(--apoz-em-muted); }
-        .apoz-core-row:not(.apoz-core-row-enabled) .apoz-core-row-name { font-style: italic; }
+           idle-but-enabled module gives, and those are different things.
+           SCOPED TO MODULE ROWS. These were written as
+           :not(.apoz-core-row-enabled), and a Tool row is also not enabled —
+           it has no on/off state at all — so every tool inherited the
+           disabled treatment and rendered dim and italic. Reported. A rule
+           about "off" has to match on being a module first. */
+        .apoz-core-row-module:not(.apoz-core-row-enabled) { opacity: var(--apoz-em-muted); }
+        .apoz-core-row-module:not(.apoz-core-row-enabled) .apoz-core-row-name { font-style: italic; }
         /* Revealed on hover only — a row you're not looking at shouldn't
            carry an extra button's worth of visual noise. */
         .apoz-core-row-update-btn { display: none; margin-left: auto; background: var(--apoz-primary);
@@ -2179,7 +2296,11 @@
           font-size: 9px; font-weight: 600; padding: 2px 6px; cursor: pointer; flex: none; }
         .apoz-core-row:hover .apoz-core-row-update-btn { display: inline-block; }
         .apoz-core-row-update-btn:hover { filter: brightness(1.1); }
+        /* space-between spreads EVERY child, so with a label and two buttons
+           it put one button in the middle of the row. The buttons are one
+           group and have to be one flex child. */
         .apoz-core-modules-head { display: flex; align-items: center; justify-content: space-between; }
+        .apoz-core-head-actions { display: flex; align-items: center; gap: var(--apoz-s1); flex: none; }
         .apoz-core-subtle-icon-btn { background: none; border: none; color: var(--apoz-foreground);
           opacity: .4; cursor: pointer; font-size: 11px; padding: 2px 4px; border-radius: 3px;
           display: inline-flex; align-items: center; }
@@ -2245,10 +2366,14 @@
       dropdown.innerHTML = `
         <div class="apoz-core-modules-head">
           <div class="apoz-core-section-label">Modules<span class="apoz-core-info-icon"
-            data-tooltip="ON/OFF lives here, and only here: disabling a module stops it running. The buttons in the top bar next to &quot;Apoz Core&quot; only SHOW or HIDE that module's window - a hidden module keeps running, keeps tracking and still rings its alarm."
+            data-tooltip="Turns a module on or off. The buttons in the top bar only show or hide a window - a hidden module keeps running and still rings its alarm." data-tooltip-dev="This is the only place that changes enabled state. setEnabled() force-closes the window on disable, because hiding a panel while its heartbeat kept running is how someone ended up with an alarm they could not find."
             ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.3"/><line x1="8" y1="7.2" x2="8" y2="11.3" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.9" fill="currentColor" stroke="none"/></svg></span></div>
-          <button class="apoz-core-subtle-icon-btn" type="button" id="apoz-core-disable-all" data-tooltip="Disable all modules" data-tooltip-right
-            ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="8" height="8" rx="1"/></svg></button>
+          <div class="apoz-core-head-actions">
+            <button class="apoz-core-subtle-icon-btn" type="button" id="apoz-core-disable-all" data-tooltip="Disable all modules"
+              ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="8" height="8" rx="1"/></svg></button>
+            <button class="apoz-core-subtle-icon-btn" type="button" id="apoz-core-reset-positions" data-tooltip="Bring every window back on-screen" data-tooltip-right
+              ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8A5 5 0 1 1 11.3 4.5"/><path d="M13 3.2v3.3h-3.3"/></svg></button>
+          </div>
         </div>
         <div id="apoz-core-module-rows"></div>
         <div id="apoz-core-tools-block" style="display:none">
@@ -2261,10 +2386,15 @@
         <div class="apoz-core-separator"></div>
         <div class="apoz-core-bottom-icons">
           <button class="apoz-core-icon-btn" type="button" id="apoz-core-open-settings" data-tooltip="Settings">⚙</button>
-          <button class="apoz-core-icon-btn" type="button" id="apoz-core-open-jobs" data-tooltip="Background jobs — progress and results from the local job host, if one is running. Set it up in Settings." data-tooltip-wide>⧗</button>
-          <button class="apoz-core-icon-btn" type="button" id="apoz-core-check-updates" data-tooltip="Check for updates">⟳</button>
-          <button class="apoz-core-icon-btn" type="button" id="apoz-core-reset-positions" data-tooltip="Reset window POSITIONS (not sizes) back on-screen — for a full reset including size, use Settings instead" data-tooltip-wide data-tooltip-right
-            ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8A5 5 0 1 1 11.3 4.5"/><path d="M13 3.2v3.3h-3.3"/></svg></button>
+          <button class="apoz-core-icon-btn" type="button" id="apoz-core-open-jobs" data-tooltip="Progress and results from the Companion, if it is running. Set it up in Settings." data-tooltip-dev="Nothing shipped submits a job yet - the tier exists for work too large for a tab. server/README.md section 8.3 lists what is host-required versus host-optional." data-tooltip-wide>⧗</button>
+          <!-- Far right, and a DOWNLOAD arrow rather than the circular one it
+               used to share with the position reset. Two buttons doing
+               unrelated things wore the same glyph, which is a coin-flip every
+               time you reach for one. Reset-positions kept the circular arrow
+               (it means "put it back") and moved up beside Disable all, where
+               the other whole-overlay controls are. -->
+          <button class="apoz-core-icon-btn" type="button" id="apoz-core-check-updates" data-tooltip="Check for updates" data-tooltip-right
+            ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v7.5"/><path d="M5 7.2 8 10.2l3-3"/><path d="M3 12.5h10"/></svg></button>
         </div>
         <div class="apoz-core-version-row">
           <span id="apoz-core-self-ver"></span>
@@ -2285,8 +2415,15 @@
         closeDropdown();
         const ok = await ui.confirmDialog({
           title: 'Reset window positions',
-          message: 'Moves every open window (and Settings) back on-screen at its default position. '
-            + 'Sizes are left alone — for a full reset including size, use "Reset window sizes" in Settings instead.',
+          // ENUMERATED, because "reset" is a word people press cautiously and
+          // a vague one gets pressed either never or by accident. Each line is
+          // a thing that will visibly change, and the last two say what is
+          // deliberately left alone so nobody reaches for this expecting it.
+          message: 'This will:\n'
+            + '  \u2022 move every OPEN module window back to its default position\n'
+            + '  \u2022 move the Settings window back, and return it to its default size\n\n'
+            + 'It will NOT change the size of module windows, or any other setting. '
+            + 'For sizes too, use "Reset window sizes" in Settings.',
           confirmLabel: 'Reset positions',
         });
         if (ok) resetPositions();
@@ -2695,6 +2832,11 @@
 
       const tabs = [];
       let activeTabId = null;
+      // Assigned once selectTabLazily exists further down; renderSide's click
+      // handlers call through this rather than capturing either function
+      // directly, so there is exactly one code path for "show a tab" and it
+      // is the one that also renders the tab.
+      let selectTabByIdLazily = (id) => selectTab(id);
       function addTab(id, label, group) {
         const pane = document.createElement('div');
         pane.className = 'apoz-settings-pane';
@@ -2725,13 +2867,25 @@
           b.type = 'button';
           b.className = 'apoz-settings-side-i' + (t.id === activeTabId ? ' on' : '');
           b.textContent = t.label;
-          b.addEventListener('click', () => selectTab(t.id));
+          // selectTabLazily, NOT selectTab. This was the bug behind "module
+          // settings tabs are empty from the sidebar but appear when I use the
+          // gear on the module window": the gear routes through
+          // openSettingsWindow -> settingsUi.selectTab, which IS the lazy
+          // version, while the sidebar called the raw one -- which swaps which
+          // pane is visible and never renders its content. A pane whose
+          // _render has not run is simply an empty div, so the symptom was a
+          // correctly-selected, entirely blank tab.
+          //
+          // Late-bound through a wrapper because selectTabLazily is defined
+          // below this function (it needs the tab list to exist first), and
+          // capturing it by value here would capture undefined.
+          b.addEventListener('click', () => selectTabByIdLazily(t.id));
           side.appendChild(b);
         }
       }
 
       const paneGeneral = addTab('general', 'General', 'Core');
-      const paneJobs = addTab('jobs', 'Job host', 'Core');
+      const paneJobs = addTab('jobs', 'Companion', 'Core');
 
       // A category heading inside a pane. Distinct from a group box on
       // purpose: the pane IS the group now, and boxing every category inside
@@ -2882,6 +3036,20 @@
       });
       reloadRow.style.marginTop = '6px';
       windowsGroup.appendChild(reloadRow);
+      category(paneGeneral, 'Developer');
+      const devGroup = document.createElement('div');
+      devGroup.className = 'apoz-ui-group';
+      devGroup.appendChild(Core_ui_toggleRow({
+        label: 'Show developer notes in hover text',
+        info: 'A lot of the explanation in this overlay is really addressed to whoever maintains it: '
+          + 'why a control is shaped the way it is, which bug produced it, what a fallback does. '
+          + 'That is worth keeping and is not worth reading every time you hover a button, so it '
+          + 'lives on a second tier. Turn this on and it appears, tinted, under the ordinary text.',
+        checked: getSetting('showDevTooltips'),
+        onChange: (v) => setSetting('showDevTooltips', v),
+      }));
+      paneGeneral.appendChild(devGroup);
+
       category(paneGeneral, 'Windows');
       paneGeneral.appendChild(windowsGroup);
 
@@ -2902,7 +3070,7 @@
       hostGroup.style.cssText = 'margin-top:10px;';
       const hostLabel = document.createElement('div');
       hostLabel.style.cssText = 'font-weight:bold; opacity:.7; text-transform:uppercase; font-size:10px; letter-spacing:.04em; margin-bottom:4px;';
-      hostLabel.textContent = 'Job host';
+      hostLabel.textContent = 'Companion';
       hostLabel.appendChild(ui.infoIcon(
         'An optional local program that runs long simulations outside the browser, so they keep going '
         + 'when this tab is closed. Everything here works without it — this only unlocks the long jobs. '
@@ -2945,7 +3113,7 @@
         hostBar.hidden = true;
         hostTokenRow._input.value = '';
         hostTokenRow._input.placeholder = jobs.config.hasToken ? '•••••••• (saved)' : 'paste from the host';
-        toast('Job host saved.', { type: 'success', duration: 3000 });
+        toast('Companion settings saved.', { type: 'success', duration: 3000 });
         if (typeof jobs.connect === 'function') jobs.connect();
       }
       function renderHostBar() {
@@ -2953,7 +3121,7 @@
         hostBar.innerHTML = '';
         const label = document.createElement('span');
         label.className = 'apoz-settings-savebar-label';
-        label.textContent = `Job host · ${n} unsaved change${n === 1 ? '' : 's'}`;
+        label.textContent = `Companion · ${n} unsaved change${n === 1 ? '' : 's'}`;
         const spacer = document.createElement('span');
         spacer.style.flex = '1';
         const discard = document.createElement('button');
@@ -3069,8 +3237,10 @@
           copyBtn.className = 'apoz-ui-btn';
           copyBtn.textContent = 'Copy';
           copyBtn.setAttribute('data-tooltip',
-            'Copies the command that starts the job host. Run it in a terminal in your queslar-core clone. '
-            + 'A userscript cannot start it for you — nothing in the browser sandbox can launch a program.');
+            'Copies the command that starts the Companion. Run it in a terminal in your queslar-core clone.');
+          copyBtn.setAttribute('data-tooltip-dev',
+            'A userscript categorically cannot start a process: no GM_* API exposes it, and this project '
+            + 'mandates @grant none anyway. See server/README.md section 7.');
           copyBtn.setAttribute('data-tooltip-wide', '');
           copyBtn.addEventListener('click', () => {
             try {
@@ -3188,6 +3358,7 @@
           t.pane._render();
         }
       };
+      selectTabByIdLazily = selectTabLazily;
       selectTabLazily('general');
 
       return {
@@ -3278,6 +3449,19 @@
             : `${others} module update${others === 1 ? '' : 's'} available — see the rows above.`;
           if (entry) btn.addEventListener('click', (e) => { e.stopPropagation(); openUpdate(entry); });
           box.appendChild(btn);
+        } else if (!RELEASE.manifestUrl) {
+          // NOT A FAILURE. A dev/proxy build deliberately has no manifest URL
+          // -- there is nothing to check against, by design -- and the
+          // three-state footer originally rendered that through the error
+          // branch, so pressing Update on the proxy reported "Check failed".
+          // Reported immediately after it shipped. "Off" and "broken" are
+          // different states and the whole point of this footer is that a
+          // check which did not happen must not look like one that did.
+          const el = document.createElement('span');
+          el.textContent = 'dev build — updates off';
+          el.title = 'This build came from the dev proxy, so it has no update URL baked in. '
+            + 'Rebuild from src/ to change it; the live channel is what checks for updates.';
+          box.appendChild(el);
         } else if (updateState.error) {
           const el = document.createElement('span');
           el.className = 'apoz-core-update-warn';
@@ -3410,7 +3594,8 @@
       for (const id of Object.keys(modules)) {
         const mod = modules[id];
         const row = document.createElement('div');
-        row.className = 'apoz-core-row' + (mod.enabled ? ' apoz-core-row-enabled' : '');
+        row.className = 'apoz-core-row apoz-core-row-module'
+          + (mod.enabled ? ' apoz-core-row-enabled' : '');
         row.appendChild(stateSlot(mod));
         const label = document.createElement('span');
         label.className = 'apoz-core-row-name';
@@ -3444,6 +3629,19 @@
           if (mod.enabled && (mod.state === 'attention' || mod.state === 'problem')) {
             state.className += ' apoz-core-row-state-live';
           }
+        }
+        // A SECOND, FASTER HOVER, deliberately narrower than the row's own.
+        // The row carries a native `title` (description + version), which the
+        // browser shows after its own ~1s delay — fine for a description
+        // nobody is hunting for. The version IS hunted for, so the state cell
+        // carries it through Core's own tooltip, which appears immediately.
+        //
+        // `title=""` on the cell is load-bearing: a native title on an
+        // ANCESTOR still shows while hovering a child, so without this you get
+        // both bubbles at once, which the tooltip rules here already forbid.
+        if (mod.version) {
+          state.setAttribute('data-tooltip', mod.label + ' v' + mod.version);
+          state.title = '';
         }
         row.appendChild(state);
         row.addEventListener('click', (e) => { e.stopPropagation(); setEnabled(id, !mod.enabled); });
@@ -3504,6 +3702,19 @@
       for (const id of Object.keys(modules)) {
         const mod = modules[id];
         if (mod.enabled && mod.open) safely(id, 'onResetPosition');
+      }
+      // SETTINGS GETS THE FULL TREATMENT, including its size PREFERENCE.
+      // This is the overlay's fallback of last resort that still has a UI --
+      // the console's __apozResetCore() is below it -- so it has to be able to
+      // recover from the one setting that can leave the Settings window itself
+      // awkward. resetFull() alone would re-apply the very size that was the
+      // problem, because the size is a stored preference rather than a
+      // persisted rect.
+      if (getSetting('settingsSize') !== SETTINGS_DEFAULTS.settingsSize) {
+        setSetting('settingsSize', SETTINGS_DEFAULTS.settingsSize);
+        const want = settingsSize();
+        settingsMinW = want.w; settingsMinH = want.h;
+        if (settingsHandle) settingsHandle.setMinSize(want);
       }
       if (settingsHandle) settingsHandle.resetFull();
     }
@@ -3822,7 +4033,24 @@
           };
           return hostState;
         }
-        hostState = { state: HOST_STATES.READY, detail: `${health.capacity ? health.capacity.workers : '?'} workers`, health, at: Date.now() };
+        // READY, and separately: is the Companion itself current? The protocol
+        // check above answers "can these two talk"; this answers "is the half
+        // that cannot update itself behind". They are different questions and
+        // conflating them is why a months-old Companion could sit there
+        // speaking the protocol perfectly and never mention it.
+        //
+        // Compared against the version this SCRIPT was released at, which is
+        // the only upstream figure the browser has without another fetch. The
+        // two are released together, so a Companion older than the script is
+        // the case worth mentioning; newer is fine and says nothing.
+        const stale = health.appVersion && health.appVersion !== 'unknown'
+          && cmpVersion(RELEASE.version, health.appVersion) > 0;
+        hostState = {
+          state: HOST_STATES.READY,
+          detail: `${health.capacity ? health.capacity.workers : '?'} workers`
+            + (stale ? ` — Companion ${health.appVersion} is behind this script (${RELEASE.version}); git pull and restart it` : ''),
+          health, at: Date.now(),
+        };
       } catch (err) {
         // A refused connection is indistinguishable from a blocked one at this
         // layer, so the message names both rather than asserting one.

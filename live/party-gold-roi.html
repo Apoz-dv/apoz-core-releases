@@ -577,15 +577,15 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
 window.APOZ_FACTS = (function () {
   /* formulas/pets.json :: pets.slotUpgrade.costFormula  [CODE] */
   function petSlotUpgradeCost(currentLevel, newLevel) { let total = 0; for (let r = currentLevel + 1; r <= newLevel; r++) total += r <= 150 ? Math.floor(500000 * r**3) : Math.floor(500000 * 150**3 * (r/150)**15); return { currency: 'gold', value: total }; } // per-level marginal cost at level L->L+1: floor(500000*(L+1)^3) while L+1<=150, else floor(500000*150^3*((L+1)/150)^15). Exactly continuous at the seam: both branches evaluate to floor(500000*150^3) = 1,687,500,000,000 at r=150.
-  /* formulas/equipment.json :: equipment.slotUpgrade.boostFormula  [CODE] */
-  function slotBoostPercent(slotLevel) { let block = Math.floor(slotLevel / 30); let intoBlock = slotLevel % 30; return 0.3*block*(block+1)/2 + intoBlock*0.01*(block+1); }
+  /* formulas/pets.json :: pets.slotUpgrade.boostFormula  [CODE] */
+  function petSlotBoostPercent(slotLevel) { let block = Math.floor(slotLevel / 30); let intoBlock = slotLevel % 30; if (block >= 5) return 0.3*5*6/2 + intoBlock*0.01*6; return 0.3*block*(block+1)/2 + intoBlock*0.01*(block+1); }
   /* formulas/party.json :: party.fifthMemberPenalty.formula  [CODE] */
   function partySizeMultiplier(memberCount) { return memberCount === 5 ? 0.8 : 1; }
   /* formulas/economy.json :: gold.levelMultiplier  [LIVE] */
   function goldLevelMultiplier(characterLevel) { return 1 + 0.0001 * characterLevel; }
   /* tables/modifier-tiers.json :: tiers.pet.boostPercent  [CODE] */
   const petTierBoostPercent = [10,20,30,40,50,60,70,80,90,100,125,150,170,190,210,230];
-  return { petSlotUpgradeCost, slotBoostPercent, partySizeMultiplier, goldLevelMultiplier, petTierBoostPercent };
+  return { petSlotUpgradeCost, petSlotBoostPercent, partySizeMultiplier, goldLevelMultiplier, petTierBoostPercent };
 })();
 </script>
 <script>
@@ -630,12 +630,14 @@ window.APOZ_FACTS = (function () {
   var VIP_PCT_WHEN_ON = 0.10;
 
   // ---- core facts, all generated into window.APOZ_FACTS by the build ----
-  // slotBoostPercent is emitted from equipment.slotUpgrade.boostFormula, which
-  // pets.slotBoostFormula states is the identical function for pet slots.
+  // slotBoostPercent is emitted from pets.slotUpgrade.boostFormula -- the PET
+  // curve, which stopped being the equipment one on 2026-09-07. Every call
+  // below is a pet slot (combat or utility), so there is no equipment caller
+  // here to keep on the old curve.
   // Despite the name it returns a FRACTION, so *100 happens here and nowhere
   // else. The percent form is always a whole number, so rounding is exact and
   // is the only thing between the UI and "+70.00000000000001%".
-  function slotBoostPct(L){ return Math.round(APOZ_FACTS.slotBoostPercent(L) * 100); }
+  function slotBoostPct(L){ return Math.round(APOZ_FACTS.petSlotBoostPercent(L) * 100); }
   function stepCost(L){ return APOZ_FACTS.petSlotUpgradeCost(L - 1, L).value; }
 
   function petTierMultiplier(tier){
