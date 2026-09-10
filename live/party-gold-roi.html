@@ -501,7 +501,7 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
     <div class="tblfoot">
       <span class="count" id="combatRowCount"></span>
       <button type="button" class="btn" id="combatExpandBtn">Expand</button>
-      <button type="button" class="btn" id="combatMoreBtn">+30</button>
+      <button type="button" class="btn" id="combatMoreBtn">+50</button>
       <input type="number" id="combatJumpInput" min="0" max="5000" placeholder="to level">
       <button type="button" class="btn" id="combatJumpBtn">Go</button>
     </div>
@@ -518,7 +518,7 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
     <div class="tblfoot">
       <span class="count" id="utilityRowCount"></span>
       <button type="button" class="btn" id="utilityExpandBtn">Expand</button>
-      <button type="button" class="btn" id="utilityMoreBtn">+30</button>
+      <button type="button" class="btn" id="utilityMoreBtn">+50</button>
       <input type="number" id="utilityJumpInput" min="0" max="5000" placeholder="to level">
       <button type="button" class="btn" id="utilityJumpBtn">Go</button>
     </div>
@@ -1073,7 +1073,7 @@ window.APOZ_FACTS = (function () {
     wrap.scrollTop = Math.max(0, row.offsetTop - headH - row.offsetHeight * 4);
   }
 
-  var combatMaxLevel = 120, utilityMaxLevel = 120;
+  var combatMaxLevel = 200, utilityMaxLevel = 200;
   var MAX_LEVEL_CAP = 5000;
   var pendingScroll = true;
 
@@ -1136,7 +1136,7 @@ window.APOZ_FACTS = (function () {
     var key;
     for (key in FIELD_IDS) document.getElementById(FIELD_IDS[key]).value = DEFAULTS[key];
     for (key in CHECK_IDS) document.getElementById(CHECK_IDS[key]).checked = CHECK_DEFAULTS[key];
-    combatMaxLevel = 120; utilityMaxLevel = 120; pendingScroll = true;
+    combatMaxLevel = 200; utilityMaxLevel = 200; pendingScroll = true;
   }
   function readStored(keys){
     for (var i = 0; i < keys.length; i++){
@@ -1362,7 +1362,7 @@ window.APOZ_FACTS = (function () {
 
     [['combat','combatWrap'],['utility','utilityWrap']].forEach(function(pair){
       var which = pair[0], wrapId = pair[1];
-      document.getElementById(which + 'MoreBtn').addEventListener('click', function(){ extend(which, 30); });
+      document.getElementById(which + 'MoreBtn').addEventListener('click', function(){ extend(which, 50); });
       document.getElementById(which + 'JumpBtn').addEventListener('click', function(){
         var v = clampLevel(document.getElementById(which + 'JumpInput').value);
         if (v > 0) extend(which, 0, v);
