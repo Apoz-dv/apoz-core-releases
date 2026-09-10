@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.13.5
+// @version      6.13.6
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.13.5",
+    "version": "6.13.6",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -1611,8 +1611,30 @@
       // of the document, where offsetWidth/offsetHeight are both 0 — persisting
       // a 0x0 rect over a perfectly good saved one. (The minSize floor on the
       // next open hid the damage; the saved size was still lost.)
+      //
+      // `el.hidden` gets the SAME treatment (2026-09-10, FOURTH round on
+      // this bug — the closest fix yet still wasn't enough). The previous
+      // pass made close()/toggle() flush a PENDING resize before hiding —
+      // correct as far as it goes, but ResizeObserver notifications are
+      // asynchronous relative to the DOM change that causes them: a resize
+      // synchronously CAUSED right before close() (eta-tracker's and
+      // fighter-allocator's own close paths collapse an internal "activity
+      // strip" immediately before calling this) has not been OBSERVED yet
+      // by the time that flush runs — el._apozResizeTimer is still
+      // whatever it was before, so the flush finds nothing to do. The
+      // observer then fires AFTER el.hidden is already true, arms a fresh
+      // debounce anyway, and 300ms later persistNow() ran against a
+      // hidden, 0-sized box regardless of the flush.
+      //
+      // Trying to out-time every possible ordering of "what caused a
+      // resize right before close" is a losing game — the robust fix is
+      // here, at the one place the actual write happens: a hidden window
+      // has no real box to measure, so ANY save attempted while hidden is
+      // refused outright, not just the ones this file happened to already
+      // think to flush. §9.4's "refuse rather than guess" applied to a
+      // window's own geometry, not just to a live game-data probe.
       function persistNow() {
-        if (!persist || !el.isConnected) return;
+        if (!persist || !el.isConnected || el.hidden) return;
         saveWindowGeometry(spec.id, currentRect());
       }
 
