@@ -1,8 +1,8 @@
 {
   "channel": "live",
-  "generated": "2026-09-10T06:34:56.972Z",
+  "generated": "2026-09-10T07:27:43.793Z",
   "core": {
-    "version": "6.13.2",
+    "version": "6.13.3",
     "url": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/apoz-core.user.js"
   },
   "modules": [
@@ -16,7 +16,7 @@
     {
       "id": "fighter-allocator",
       "label": "Fighter Allocator",
-      "version": "1.11.0",
+      "version": "1.11.1",
       "url": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/fighter-allocator.user.js",
       "notes": ""
     }

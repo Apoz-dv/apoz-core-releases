@@ -2,7 +2,7 @@
 // @name         Apoz Core: Fighter Allocator
 // @namespace    apoz-core
 // @author       Apoz
-// @version      1.11.0
+// @version      1.11.1
 // @description  Apoz Core module (requires "Apoz Core"). Allocates gold-purchased fighter stats (Health/Damage/Hit/Dodge/Defense/Crit Damage) across your 6 fighters. Class-keyed profiles with a full table (category, classes, date, source), World Boss-aware math (Hit target from boss level, exact Damage/Crit Damage split), and two-way import/export with the community "Fighter Optimizer" gold-plan format. Fills the game's own stat inputs; never auto-clicks Save Preset.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -57,7 +57,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("fighter-allocator", "1.11.0-dev", function (Core) {
+  })("fighter-allocator", "1.11.1-dev", function (Core) {
 
 
   const MODULE_ID = 'fighter-allocator';
@@ -2782,7 +2782,20 @@
       // (item 3, "table should be longer by default even when empty") — this
       // keeps the taller resting table visible without the window body's own
       // overflow:auto kicking in on a freshly-opened, un-resized window.
-      minSize: { w: 640, h: 680 },
+      //
+      // w bumped 640->850 (2026-09-10, REPORTED: rows double-lining at the
+      // old width). The Name/Type/Classes(1-6)/Source/Updated/Actions table
+      // uses `table-layout:auto` (no fixed column widths), so a name or
+      // class list that doesn't fit WRAPS the cell onto a second line
+      // instead of growing the table — confirmed directly in a real browser
+      // with representative plan names ("World Boss build", "Dungeon push
+      // v3"): every row single-lined at 822px, and a longer but still
+      // realistic name ("World Boss push (Optimized)", 28 chars — the "a
+      // bit more space for naming" ask) still fit at 850px with room to
+      // spare. 850 rather than landing exactly on the measured 822 for the
+      // same reason `minSize.h` above got real headroom, not just the
+      // measured number.
+      minSize: { w: 850, h: 680 },
       settingsTab: MODULE_ID, // gear button in the header -> this module's Settings pane, registered below
       content,
       onClose: () => togglePanel(false),

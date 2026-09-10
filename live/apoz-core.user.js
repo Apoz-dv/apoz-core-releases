@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.13.2
+// @version      6.13.3
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.13.2",
+    "version": "6.13.3",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -1643,7 +1643,24 @@
       if (specResizeMode !== 'none') {
         winScope.resize(el, () => {
           clearTimeout(el._apozResizeTimer);
-          el._apozResizeTimer = setTimeout(persistNow, 300); // same 300ms debounce eta-tracker already used
+          // REPORTED BUG (2026-09-10, found while re-verifying the FIRST fix
+          // for this): resize, move, CLOSE the window, refresh — position
+          // survived, size reset to default. The timer ID left in
+          // `el._apozResizeTimer` after it FIRES is still a truthy number
+          // (clearTimeout on an already-fired id is a harmless no-op, but
+          // the stored id itself never gets cleared) — so
+          // flushPendingResize's `if (!el._apozResizeTimer) return` could
+          // not tell "already saved, ages ago" from "still pending right
+          // now". Closing the window later, then any subsequent pagehide
+          // (a refresh) called persistNow() a SECOND time against that
+          // stale truthy id — and by then the window is `hidden` (display:
+          // none), so currentRect()'s offsetWidth/offsetHeight read 0,
+          // silently overwriting the good saved size with a 0x0 rect. Only
+          // size was hit because currentRect()'s x/y come from style.left/
+          // top (unaffected by hidden), but w/h come from the live box.
+          // Fixed by nulling the id out the moment it actually fires, so a
+          // later flush has nothing stale left to mistake for "pending".
+          el._apozResizeTimer = setTimeout(() => { el._apozResizeTimer = null; persistNow(); }, 300);
         });
         winScope.add(() => clearTimeout(el._apozResizeTimer));
       }
@@ -4805,6 +4822,7 @@
       get __modulesForTest() { return modules; },
       get __toolsForTest() { return tools; },
       get __coreUiForTest() { return coreUi; },
+      get __windowsForTest() { return windowRegistry; },
       // shared number handling - modules must use these, never their own parser
       parseNumber, formatNumber,
       // SPA route changes, detected once by Core and shared (v9). A module
@@ -4908,6 +4926,19 @@
       lines.push(`  - ${id}: ${reg[id].enabled ? 'enabled' : 'disabled'}`);
     }
     lines.push(`Tools:     ${Object.keys(Core.__toolsForTest).join(', ') || 'none'}`);
+    // Added 2026-09-10 during a real "why didn't my window save its size"
+    // report — at the time, answering it needed pasting internal state by
+    // hand. `el.id = 'apoz-window-' + spec.id` (createWindow, above) means
+    // every registered window's live open/hidden state and its persisted
+    // geometry are both readable from just the id, with no new accessor.
+    const winIds = Object.keys(Core.__windowsForTest);
+    lines.push(`Windows:   ${winIds.join(', ') || 'none'}`);
+    for (const id of winIds) {
+      const el = document.getElementById('apoz-window-' + id);
+      const saved = (() => { try { return localStorage.getItem('apoz:windowGeometry:' + id); } catch (e) { return null; } })();
+      lines.push(`  - ${id}: ${el ? (el.hidden ? 'closed' : `open (${el.offsetWidth}x${el.offsetHeight} @ ${el.style.left},${el.style.top})`) : 'not built'}`
+        + `  saved=${saved || 'none'}`);
+    }
     lines.push(`Numbers:   ${JSON.stringify(Core.numberProvenance())}`);
     lines.push('--- end ---');
     const text = lines.join('\n');
