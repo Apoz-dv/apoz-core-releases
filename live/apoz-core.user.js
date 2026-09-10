@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.13.4
+// @version      6.13.5
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.13.4",
+    "version": "6.13.5",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -1686,6 +1686,32 @@
         persistNow();
       }
 
+      // REPORTED BUG (2026-09-10): "window resizing doesn't keep between
+      // sessions/refreshes — only saves when the window is open at the
+      // moment of refreshing, not when it's idle in the background."
+      //
+      // Root cause: the ResizeObserver above debounces persistNow() by
+      // 300ms (winScope.resize, above) so an active drag does not spam
+      // localStorage on every intermediate frame. That debounce is a
+      // setTimeout — and CLAUDE.md rule 5 / INSTRUMENTATION.md §4.4 is
+      // exactly this trap: "a hidden tab clamps timers to roughly once a
+      // minute." Resize the window, then switch away from the tab (or the
+      // window goes `hidden` some other way) before 300ms elapses, and the
+      // pending save can sit throttled for up to a minute — long enough
+      // that a refresh in the meantime loses it outright, with nothing
+      // ever having actually written the new size.
+      //
+      // Called from THREE places now, not just the shared tab-hidden
+      // listener it was written for: handle.close() and handle.toggle()
+      // below also call it, because a window's own close is a second,
+      // narrower version of the exact same race — see close()'s comment.
+      function flushPendingResize() {
+        if (!el._apozResizeTimer) return;
+        clearTimeout(el._apozResizeTimer);
+        el._apozResizeTimer = null;
+        persistNow();
+      }
+
       windowRegistry[spec.id] = {
         reclamp() {
           if (el.hidden) return; // a hidden window has nothing on-screen to reclamp
@@ -1701,36 +1727,9 @@
         // currently enabled/open and without depending on that module having
         // wired up onResetPosition correctly.
         resetFull,
-        // REPORTED BUG (2026-09-10): "window resizing doesn't keep between
-        // sessions/refreshes — only saves when the window is open at the
-        // moment of refreshing, not when it's idle in the background."
-        //
-        // Root cause: the ResizeObserver above debounces persistNow() by
-        // 300ms (winScope.resize, above) so an active drag does not spam
-        // localStorage on every intermediate frame. That debounce is a
-        // setTimeout — and CLAUDE.md rule 5 / INSTRUMENTATION.md §4.4 is
-        // exactly this trap: "a hidden tab clamps timers to roughly once a
-        // minute." Resize the window, then switch away from the tab (or the
-        // window goes `hidden` some other way) before 300ms elapses, and the
-        // pending save can sit throttled for up to a minute — long enough
-        // that a refresh in the meantime loses it outright, with nothing
-        // ever having actually written the new size. This is NOT a race
-        // that gets rarer with a longer debounce; it is the debounce itself
-        // being the only path to disk, with no fallback for "the tab went
-        // away before the timer fired."
-        //
-        // The fix is not to remove the debounce (still wanted, to smooth an
-        // active drag) — it is to give the pending save a second, immediate
-        // path to disk for exactly the moment this matters: right before the
-        // tab goes hidden or the page unloads. See the shared
-        // visibilitychange/pagehide listeners below, which call this for
-        // every registered window.
-        flushPendingResize() {
-          if (!el._apozResizeTimer) return;
-          clearTimeout(el._apozResizeTimer);
-          el._apozResizeTimer = null;
-          persistNow();
-        },
+        // Exposed so the shared visibilitychange/pagehide listeners
+        // (below) can flush every registered window, not just this one.
+        flushPendingResize,
       };
 
       const handle = {
@@ -1739,8 +1738,28 @@
         // Plain hide — no side effects, so a module can call this from its
         // OWN close logic (e.g. togglePanel(false)) without ever recursing
         // back into itself through onClose.
-        close() { el.hidden = true; },
-        toggle() { el.hidden = !el.hidden; return !el.hidden; },
+        //
+        // REPORTED REGRESSION (2026-09-10, THIRD round on this same bug):
+        // "resize, close, refresh — size still resets to default", even
+        // after the stale-timer-id fix above. Root cause this time: both
+        // eta-tracker and fighter-allocator's own close paths collapse an
+        // internal "activity strip" immediately before calling this — a
+        // real, LEGITIMATE content resize (not a stale id), confirmed by
+        // the comment already sitting on that collapse call ("expanding it
+        // grows the window... closing while expanded banked the extra
+        // height into saved geometry", from an earlier pass). That resize
+        // arms a fresh, perfectly valid 300ms debounce — and then THIS
+        // function ran synchronously right after, hiding the window before
+        // that timer ever got to fire. 300ms later it fired anyway, against
+        // a now-hidden (0x0) box, saving zero. flushPendingResize() existed
+        // already (for the tab-hidden case above) but nothing called it
+        // from the one path that matters here: the window's OWN close.
+        close() { flushPendingResize(); el.hidden = true; },
+        toggle() {
+          if (!el.hidden) flushPendingResize(); // same reasoning as close(), above
+          el.hidden = !el.hidden;
+          return !el.hidden;
+        },
         setContent(node) { body.innerHTML = ''; body.appendChild(node); },
         // Two lines, and it stays two lines however much this window grows —
         // that is the whole point of the scope. The registry entry is explicit
