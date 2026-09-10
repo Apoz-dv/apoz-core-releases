@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.13.1
+// @version      6.13.2
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.13.1",
+    "version": "6.13.2",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -3562,8 +3562,20 @@
           btn.textContent = entry ? `Core ${entry.to} available ↗` : 'Update available ↗';
           btn.title = entry
             ? (entry.notes || `${entry.from} → ${entry.to}. Opens the script so Tampermonkey can install it.`)
-            : `${others} module update${others === 1 ? '' : 's'} available — see the rows above.`;
-          if (entry) btn.addEventListener('click', (e) => { e.stopPropagation(); openUpdate(entry); });
+            : `${others} module update${others === 1 ? '' : 's'} available. Opens the first; see the rows above for the rest.`;
+          // REPORTED BUG (2026-09-10): "clicking Update available does
+          // nothing." This button always LOOKED clickable, but only ever
+          // got a click handler when `entry` (a Core-specific update)
+          // existed — the module-only branch (Core itself is current, but
+          // one or more modules have an update) rendered the exact same
+          // button with no listener at all. Same fallback the "N updates
+          // available" toast already uses for the same ambiguity (one
+          // button, several possible targets): open the first entry: only
+          // Tampermonkey lets you install several updates from one click.
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openUpdate(entry || updateState.available[0]);
+          });
           box.appendChild(btn);
         } else if (!RELEASE.manifestUrl) {
           // NOT A FAILURE. A dev/proxy build deliberately has no manifest URL
@@ -4513,13 +4525,38 @@
     const UPDATE_INTERVAL_MS = 2 * 60 * 60 * 1000;
     let updateState = { checkedAt: 0, available: [], error: null, checking: false };
 
-    try {
-      const savedUpd = JSON.parse(localStorage.getItem(UPDATE_KEY) || 'null');
-      if (savedUpd && typeof savedUpd.checkedAt === 'number') {
-        updateState.checkedAt = savedUpd.checkedAt;
-        updateState.available = Array.isArray(savedUpd.available) ? savedUpd.available : [];
-      }
-    } catch (e) { /* first run, or storage blocked */ }
+    // REPORTED BUG (2026-09-10): "Update available" stuck showing on a dev
+    // build, with per-module rows like "4.11.1-dev -> 4.11.1" that never
+    // clear. checkForUpdates()'s own `if (!RELEASE.manifestUrl)` gate
+    // correctly stops a DEV build from ever running a NEW check — but this
+    // hydration step used to run unconditionally, so entries WRITTEN by an
+    // earlier check under a DIFFERENT, non-dev script (the user had briefly
+    // installed the standalone live-channel build to test the update flow,
+    // then switched back to the dev proxy) got loaded right back in here,
+    // regardless of the channel now running.
+    //
+    // Worse, dropAlreadyInstalled() below could never clear it again once
+    // loaded: cmpVersion treats a "-dev"/"-beta" suffix as a PRE-release,
+    // ordering it below the same numbered release — correct and intentional
+    // for the beta -> live promotion this was designed for, but wrong for
+    // dev specifically, whose version is not "not yet promoted", it is
+    // "whatever's on disk right now". "4.11.1" reads as newer than
+    // "4.11.1-dev" under that rule even when the dev build IS 4.11.1 (or
+    // newer) — so the stale entry survived the revalidation pass forever,
+    // on every future boot, regardless of what was actually installed.
+    //
+    // A dev build already promises "updates are off" elsewhere in this file;
+    // this makes that promise complete instead of "off for new checks, but
+    // still capable of showing something an old check wrote."
+    if (RELEASE.manifestUrl) {
+      try {
+        const savedUpd = JSON.parse(localStorage.getItem(UPDATE_KEY) || 'null');
+        if (savedUpd && typeof savedUpd.checkedAt === 'number') {
+          updateState.checkedAt = savedUpd.checkedAt;
+          updateState.available = Array.isArray(savedUpd.available) ? savedUpd.available : [];
+        }
+      } catch (e) { /* first run, or storage blocked */ }
+    }
 
     // REVALIDATE WHAT WE REMEMBERED, before showing any of it.
     //
