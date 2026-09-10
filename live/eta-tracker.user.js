@@ -2,7 +2,7 @@
 // @name         Apoz Core: Pet Slot Alarm
 // @namespace    apoz-core
 // @author       Apoz
-// @version      4.11.2
+// @version      4.11.3
 // @description  Apoz Core module (requires "Apoz Core"). Read-only overlay: estimates time until the Combat pet slot upgrade is affordable from your live gold and the exact upgrade-cost formula (no need to sit on the Pets page), rings a gentle alarm - and optionally a desktop notification - when it is, and stays accurate in a backgrounded tab. Ships the Party Gold ROI calculator. No auto-clicking.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -52,7 +52,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("eta-tracker", "4.11.2-dev", function (Core) {
+  })("eta-tracker", "4.11.3-dev", function (Core) {
 
 
   const ACTION_MS = 10_000;
@@ -2119,17 +2119,23 @@
       title: 'Pet Slot Alarm',
       resizable: true,
       // MEASURED AGAINST WHAT IS ACTUALLY ON SCREEN AT OPEN, which has now
-      // gone stale twice. Today that is: the answer band with its alarm
-      // headline, the three session buttons, the readiness line, and four
-      // groups (Session, What it has read, Alarm, and the background group),
-      // plus the activity strip. The cadence fields do NOT count toward it --
-      // they live in this module's Settings tab now.
+      // gone stale three times. Today that is: the answer band with its
+      // alarm headline, the three session buttons, the readiness line, and
+      // four groups (Session, What it has read, Alarm, and the background
+      // group), plus the activity strip. The cadence fields do NOT count
+      // toward it -- they live in this module's Settings tab now.
       //
-      // 320x560 was left from before the readiness line and the background
-      // group existed, so the panel opened with a scrollbar it did not need.
-      // If you add or remove a group, RE-COUNT here rather than nudging the
-      // number until it looks right; nudging is how it went stale both times.
-      minSize: { w: 380, h: 665 },
+      // REPORTED 2026-09-10: 380x665 clipped the last group and forced a
+      // scrollbar on open by default. Measured directly in a real browser
+      // (not the viewport-shrunk test stub) at default state: the content
+      // needs ~721px of body height against 665's ~631px available (header
+      // eats 34px of the window's own 665) -- a real ~90px shortfall, not a
+      // rounding nit. 760 leaves headroom rather than landing exactly on
+      // today's number, which is how this went stale the first two times.
+      // If you add or remove a group, RE-MEASURE here (open it, check
+      // `.apoz-window-body`'s scrollHeight vs clientHeight) rather than
+      // nudging the number until it looks right.
+      minSize: { w: 380, h: 760 },
       settingsTab: MODULE_ID,
       content,
       onClose: () => togglePanel(false),
