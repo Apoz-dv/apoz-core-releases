@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.13.3
+// @version      6.13.4
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.13.3",
+    "version": "6.13.4",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -2492,6 +2492,8 @@
         <div class="apoz-core-bottom-icons">
           <button class="apoz-core-icon-btn" type="button" id="apoz-core-open-settings" data-tooltip="Settings">⚙</button>
           <button class="apoz-core-icon-btn" type="button" id="apoz-core-open-jobs" data-tooltip="Progress and results from the Companion, if it is running. Set it up in Settings." data-tooltip-dev="Nothing shipped submits a job yet - the tier exists for work too large for a tab. server/README.md section 8.3 lists what is host-required versus host-optional." data-tooltip-wide>⧗</button>
+          <button class="apoz-core-icon-btn" type="button" id="apoz-core-copy-diag" data-tooltip="Copy debug info to share" data-tooltip-dev="Runs __apozDiag() and copies its text output to the clipboard - the same thing calling it yourself in the console (F12) would print." data-tooltip-right
+            ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="7" height="8" rx="1"/><path d="M3.5 10V4a1 1 0 0 1 1-1H10"/></svg></button>
           <!-- Far right, and a DOWNLOAD arrow rather than the circular one it
                used to share with the position reset. Two buttons doing
                unrelated things wore the same glyph, which is a coin-flip every
@@ -2539,6 +2541,24 @@
       // would promise the wrong thing.
       dropdown.querySelector('#apoz-core-open-jobs')
         .addEventListener('click', (e) => { e.stopPropagation(); closeDropdown(); openJobsWindow(); });
+      // REQUESTED 2026-09-10 — the actual ask was "an easy way to share
+      // debug info with you", not a console specifically (weighed both:
+      // a custom in-page console would run at the SAME privilege as the
+      // real DevTools one — Tampermonkey's @grant none shares the page's
+      // own window — so it would not be more CAPABLE, only differently
+      // packaged, and getting it to feel as good as the real console
+      // (history, multi-line input, readable object output) is ongoing
+      // work chasing a tool that already exists for free). One button that
+      // runs the diagnostic already built for exactly this (__apozDiag(),
+      // below) and puts it straight on the clipboard covers the actual
+      // request without any of that.
+      dropdown.querySelector('#apoz-core-copy-diag').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const text = window.__apozDiag();
+        const copied = await copyTextToClipboard(text);
+        toast(copied ? 'Debug info copied — paste it into chat.' : 'Could not copy automatically — it is in the console (F12) instead.',
+          { type: copied ? 'success' : 'warn', duration: 4000 });
+      });
       checkUpdatesBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         checkForUpdates(true).then(() => {
@@ -4468,6 +4488,36 @@
         return r.json();
       },
     };
+
+    // navigator.clipboard.writeText needs a secure context AND (in some
+    // browsers) a recent user gesture — both true here (the click handler
+    // calls this synchronously-ish), but it can still be denied by a
+    // permissions policy the page sets, or simply not exist on an older
+    // browser. The execCommand fallback is deprecated but still works
+    // everywhere the modern API might not, which is exactly the situation
+    // it is for — this is not the place to drop a debug button because one
+    // API had a bad day. Returns whether it actually copied.
+    async function copyTextToClipboard(text) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (e) { /* fall through to the legacy path below */ }
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e) { return false; }
+    }
 
     // ---- toast ----
     //
