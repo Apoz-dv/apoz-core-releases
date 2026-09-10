@@ -2,7 +2,7 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.13.0
+// @version      6.13.1
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -18,7 +18,7 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.13.0",
+    "version": "6.13.1",
     "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
@@ -1684,6 +1684,36 @@
         // currently enabled/open and without depending on that module having
         // wired up onResetPosition correctly.
         resetFull,
+        // REPORTED BUG (2026-09-10): "window resizing doesn't keep between
+        // sessions/refreshes — only saves when the window is open at the
+        // moment of refreshing, not when it's idle in the background."
+        //
+        // Root cause: the ResizeObserver above debounces persistNow() by
+        // 300ms (winScope.resize, above) so an active drag does not spam
+        // localStorage on every intermediate frame. That debounce is a
+        // setTimeout — and CLAUDE.md rule 5 / INSTRUMENTATION.md §4.4 is
+        // exactly this trap: "a hidden tab clamps timers to roughly once a
+        // minute." Resize the window, then switch away from the tab (or the
+        // window goes `hidden` some other way) before 300ms elapses, and the
+        // pending save can sit throttled for up to a minute — long enough
+        // that a refresh in the meantime loses it outright, with nothing
+        // ever having actually written the new size. This is NOT a race
+        // that gets rarer with a longer debounce; it is the debounce itself
+        // being the only path to disk, with no fallback for "the tab went
+        // away before the timer fired."
+        //
+        // The fix is not to remove the debounce (still wanted, to smooth an
+        // active drag) — it is to give the pending save a second, immediate
+        // path to disk for exactly the moment this matters: right before the
+        // tab goes hidden or the page unloads. See the shared
+        // visibilitychange/pagehide listeners below, which call this for
+        // every registered window.
+        flushPendingResize() {
+          if (!el._apozResizeTimer) return;
+          clearTimeout(el._apozResizeTimer);
+          el._apozResizeTimer = null;
+          persistNow();
+        },
       };
 
       const handle = {
@@ -4626,10 +4656,28 @@
       }, 150);
     });
 
+    // Flushes every window's pending debounced geometry save immediately —
+    // see windowRegistry[id].flushPendingResize's comment for the bug this
+    // closes (a resize whose 300ms debounce got throttled by a hidden tab,
+    // then lost outright to a refresh before it ever fired). Cheap to call
+    // even when nothing is pending: each flush is a single `if` per window.
+    function flushAllPendingWindowResizes() {
+      for (const id of Object.keys(windowRegistry)) {
+        if (windowRegistry[id].flushPendingResize) windowRegistry[id].flushPendingResize();
+      }
+    }
+
     // Coming back to the tab is the moment it matters, and the moment a
     // throttled timer has not fired. Costs nothing while hidden.
     coreScope.on(document, 'visibilitychange', () => {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible') {
+        // GOING hidden, not coming back — the one moment a pending resize
+        // save is about to start being throttled, so give it its immediate
+        // path to disk right here rather than trusting the debounce to
+        // outrun whatever happens next (a refresh, the tab closing, ...).
+        flushAllPendingWindowResizes();
+        return;
+      }
       reanchorNow();
       // Writes queued while hidden were HELD, not dropped (§5's S2 trap: state
       // must keep advancing while the pixels do not). This is where they land,
@@ -4638,6 +4686,11 @@
     });
     window.addEventListener('pageshow', reanchorNow);
     window.addEventListener('focus', reanchorNow);
+    // Belt-and-suspenders alongside the visibilitychange flush above:
+    // pagehide fires on an actual navigation/reload/close, including paths
+    // (some mobile backgrounding, bfcache eviction) that do not reliably run
+    // a visibilitychange first. Same idempotent flush, cheap to call twice.
+    window.addEventListener('pagehide', flushAllPendingWindowResizes);
 
     // An SPA route change replaces the nav, which is exactly when our group
     // gets detached. history.pushState fires no event of its own, so it is
