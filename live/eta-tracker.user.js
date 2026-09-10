@@ -2,7 +2,7 @@
 // @name         Apoz Core: Pet Slot Alarm
 // @namespace    apoz-core
 // @author       Apoz
-// @version      4.11.3
+// @version      4.11.4
 // @description  Apoz Core module (requires "Apoz Core"). Read-only overlay: estimates time until the Combat pet slot upgrade is affordable from your live gold and the exact upgrade-cost formula (no need to sit on the Pets page), rings a gentle alarm - and optionally a desktop notification - when it is, and stays accurate in a backgrounded tab. Ships the Party Gold ROI calculator. No auto-clicking.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -52,7 +52,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("eta-tracker", "4.11.3-dev", function (Core) {
+  })("eta-tracker", "4.11.4", function (Core) {
 
 
   const ACTION_MS = 10_000;

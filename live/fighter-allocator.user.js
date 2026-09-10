@@ -2,7 +2,7 @@
 // @name         Apoz Core: Fighter Allocator
 // @namespace    apoz-core
 // @author       Apoz
-// @version      1.11.1
+// @version      1.11.2
 // @description  Apoz Core module (requires "Apoz Core"). Allocates gold-purchased fighter stats (Health/Damage/Hit/Dodge/Defense/Crit Damage) across your 6 fighters. Class-keyed profiles with a full table (category, classes, date, source), World Boss-aware math (Hit target from boss level, exact Damage/Crit Damage split), and two-way import/export with the community "Fighter Optimizer" gold-plan format. Fills the game's own stat inputs; never auto-clicks Save Preset.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
@@ -57,7 +57,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("fighter-allocator", "1.11.1-dev", function (Core) {
+  })("fighter-allocator", "1.11.2", function (Core) {
 
 
   const MODULE_ID = 'fighter-allocator';
@@ -573,18 +573,48 @@
     return null;
   }
 
+  // REPORTED BUG (2026-09-10): importing a real "queslar-scaled-gold-plan-v2"
+  // plan (the community Fighter Optimizer's own format) and allocating it
+  // filled every stat input with numbers in the hundreds of millions to
+  // billions, instead of the plan's own modest per-stat counts (a few
+  // thousand at most). Root cause: a UNITS mismatch this function was
+  // creating silently. The community format's `sourceBudgetB`/`budgetB`
+  // field is BILLIONS-denominated by its own name and convention — the
+  // reported plan's own `name` field said so outright, "4535.101b total
+  // plan" for a `sourceBudgetB` of 4535.10056 — but everything on APOZ's
+  // side that this value gets compared against (`liveBudgetB`, read by
+  // getTotalBudget() below, and scaleLevel()'s ratio) is RAW gold, with no
+  // division ever applied. `findSourceBudgetB` was returning the
+  // community-format value completely unconverted, so `scaleLevel`'s
+  // `sqrt(playerBudgetB / sourceBudgetB)` computed the ratio between a raw
+  // gold figure (liveBudgetB, of the order of 1e12+) and a billions figure
+  // (sourceBudgetB, of the order of 1e3-1e4) — off by roughly 1e9, and the
+  // sqrt of THAT (~31,623x) is exactly what turned a few thousand into
+  // hundreds of millions.
+  //
+  // Fixed at the one place this function returns a value: an alias whose
+  // OWN name declares billions ("...b"/"...billions") gets multiplied by
+  // 1e9 here, once, converting it into APOZ's raw-gold convention before it
+  // ever reaches scaleLevel(). The bare aliases (a plain "budget"/
+  // "totalBudget"/"usableGold", no "b" suffix) make no such claim about
+  // their own unit and are left exactly as written — guessing a conversion
+  // there risks the opposite failure this fixes, for a shape nobody has
+  // actually reported.
+  const BILLIONS_DENOMINATED_ALIASES = new Set(['budgetb', 'budgetbillions', 'sourcebudgetb',
+    'additionalbudgetb', 'additionalbudgetbillions', 'usablegoldb']);
   function findSourceBudgetB(data) {
     if (!data || typeof data !== 'object') return null;
     const aliases = new Set(['budgetb', 'budgetbillions', 'sourcebudgetb', 'additionalbudgetb',
       'additionalbudgetbillions', 'budget', 'additionalbudget', 'goldbudget', 'totalbudget',
       'usablegold', 'usablegoldb']);
     for (const [key, value] of Object.entries(data)) {
-      if (aliases.has(String(key).toLowerCase().replace(/[^a-z0-9]/g, ''))) {
+      const normKey = String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (aliases.has(normKey)) {
         // Was `typeof value === 'number'` only, so a STRING-encoded budget was
         // not misparsed — it was invisible, which is a quieter failure and a
         // worse one: the plan imported looking complete, minus its budget.
         const n = importNumber(value);
-        if (n !== null && n > 0) return n;
+        if (n !== null && n > 0) return BILLIONS_DENOMINATED_ALIASES.has(normKey) ? n * 1e9 : n;
       }
     }
     for (const value of Object.values(data)) {
@@ -694,7 +724,15 @@
       throw new Error('This profile has no recorded 6-position layout to export against — '
         + 'load it once against a live formation, then export.');
     }
-    const budgetB = profile.sourceBudgetB || 100;
+    // profile.sourceBudgetB is raw gold everywhere on this side (see
+    // findSourceBudgetB's comment) — the community format's own
+    // "...BudgetB" fields are billions-denominated, so this is the inverse
+    // of the /1e9 that import applies, not a new convention. Without it,
+    // a plan re-exported after being imported (or reallocated) would carry
+    // a billions-labelled field holding a raw-gold number nine zeroes too
+    // large, breaking it for the next tool that reads it — the exact class
+    // of bug this whole fix closes on the way in.
+    const budgetB = (profile.sourceBudgetB || 100e9) / 1e9;
     const allocations = [];
     profile.classLayout.forEach((cls, i) => {
       const stats = profile.stats[cls] || emptyStatBlock();
