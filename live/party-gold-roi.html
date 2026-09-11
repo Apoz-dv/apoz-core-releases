@@ -479,7 +479,7 @@ code{font-family:var(--mono);background:var(--surface-2);padding:.03rem .25rem;b
     </div>
 
     <div class="panel">
-      <h5>Next 24 purchases, buying the better slot each time</h5>
+      <h5>Next 100 purchases, buying the better slot each time</h5>
       <div class="strip" id="planStrip"></div>
       <div class="legend">
         <span><i class="sw" style="background:var(--warm);border:none"></i> combat</span>
@@ -1015,7 +1015,7 @@ window.APOZ_FACTS = (function () {
     }
     document.getElementById('crossTbody').innerHTML = rows;
 
-    var PLAN_STEPS = 24, plan = greedyPlan(p, PLAN_STEPS), strip = '';
+    var PLAN_STEPS = 100, plan = greedyPlan(p, PLAN_STEPS), strip = '';
     for (var j = 0; j < plan.seq.length; j++){
       var s = plan.seq[j];
       strip += '<div class="cell ' + (s.channel === 'combat' ? 'c' : 'u') + (j === plan.flipAt ? ' flip' : '') +
