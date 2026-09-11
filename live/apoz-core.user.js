@@ -2,14 +2,14 @@
 // @name         Apoz Core
 // @namespace    apoz-core
 // @author       Apoz
-// @version      6.13.6
+// @version      6.13.7
 // @description  The shell every Apoz Core module plugs into: nav launcher, module + tool registries, shared number handling for the game's per-character decimal convention, and update checking. INSTALL THIS FIRST - on its own it adds a menu and nothing else. Every script in this family is named "Apoz Core..." so they sort together in your dashboard.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
 // @grant        none
 // @run-at       document-start
-// @updateURL    https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/apoz-core.user.js
-// @downloadURL  https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/apoz-core.user.js
+// @updateURL    https://raw.githubusercontent.com/awoo-vibe-sniffa/apoz-core-releases/main/live/apoz-core.user.js
+// @downloadURL  https://raw.githubusercontent.com/awoo-vibe-sniffa/apoz-core-releases/main/live/apoz-core.user.js
 // ==/UserScript==
 
 (function () {
@@ -18,8 +18,8 @@
   // ==== GENERATED — release identity ====
   const APOZ_RELEASE = {
     "channel": "live",
-    "version": "6.13.6",
-    "manifestUrl": "https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/manifest.json"
+    "version": "6.13.7",
+    "manifestUrl": "https://raw.githubusercontent.com/awoo-vibe-sniffa/apoz-core-releases/main/live/manifest.json"
   };
   // ==== END GENERATED ====
 

@@ -2,14 +2,14 @@
 // @name         Apoz Core: Fighter Allocator
 // @namespace    apoz-core
 // @author       Apoz
-// @version      1.11.2
+// @version      1.11.3
 // @description  Apoz Core module (requires "Apoz Core"). Allocates gold-purchased fighter stats (Health/Damage/Hit/Dodge/Defense/Crit Damage) across your 6 fighters. Class-keyed profiles with a full table (category, classes, date, source), World Boss-aware math (Hit target from boss level, exact Damage/Crit Damage split), and two-way import/export with the community "Fighter Optimizer" gold-plan format. Fills the game's own stat inputs; never auto-clicks Save Preset.
 // @match        https://v2.queslar.com/*
 // @match        https://*.queslar.com/*
 // @grant        none
 // @run-at       document-start
-// @updateURL    https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/fighter-allocator.user.js
-// @downloadURL  https://raw.githubusercontent.com/Apoz-dv/apoz-core-releases/main/live/fighter-allocator.user.js
+// @updateURL    https://raw.githubusercontent.com/awoo-vibe-sniffa/apoz-core-releases/main/live/fighter-allocator.user.js
+// @downloadURL  https://raw.githubusercontent.com/awoo-vibe-sniffa/apoz-core-releases/main/live/fighter-allocator.user.js
 // ==/UserScript==
 
 (function () {
@@ -57,7 +57,7 @@
     setTimeout(function () {
       if (!window.__ApozCore) console.warn('[Apoz] "' + id + '" is installed but the Apoz Core script is not. Install Apoz Core and reload.');
     }, 8000);
-  })("fighter-allocator", "1.11.2", function (Core) {
+  })("fighter-allocator", "1.11.3", function (Core) {
 
 
   const MODULE_ID = 'fighter-allocator';
