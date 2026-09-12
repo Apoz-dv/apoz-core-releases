@@ -1,0 +1,1748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sculpture Grid Stat Rate vs Specific Stat Drop Rate Optimizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600;700&display=swap">
+<script>
+  // Restore theme immediately to prevent any flicker
+  (function(){
+    try {
+      var saved = localStorage.getItem('APOZ_THEME') || 'dark-beach';
+      if (saved === 'beach') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      } else {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-dark', saved);
+      }
+    } catch(e) {}
+  })();
+</script>
+<style>
+/* ---------------------------------------------------------------------------
+   THEME TOKENS (v4/v5 Baseline)
+   beach (light warm sand), dark-beach (warm night sand), ink, slate, umber
+--------------------------------------------------------------------------- */
+:root{
+  --bg:#efe7d7; --surface:#faf5ec; --surface-2:#f1e8d8; --surface-3:#e7dcc7;
+  --border:#d8cbb2; --border-strong:#c3b193;
+  --text:#33291d; --text-muted:#6b5c48; --text-faint:#94836c;
+  --accent:#4a6741; --accent-soft:#5f8352;
+  --warm:#a8552c; --warm-soft:#c26b3c;
+  --success:#4a6741; --band:#f4ead2; --current:#e2e8da;
+  --highlight:#6a48ea; --highlight-soft:#8d72f5;
+  --shadow:0 1px 2px rgba(80,60,35,.07), 0 4px 14px rgba(80,60,35,.06);
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --display:'Big Shoulders Display','Arial Narrow',sans-serif;
+  --num:'Source Sans 3','Segoe UI','Open Sans',system-ui,sans-serif;
+}
+
+/* 1. Dark Beach (Warm Night Sand) - User favorite */
+:root[data-theme="dark"][data-dark="dark-beach"],
+:root:not([data-theme="light"])[data-dark="dark-beach"],
+:root:not([data-theme="light"]):not([data-dark]){
+  --bg:#1a1714; --surface:#24201c; --surface-2:#2e2924; --surface-3:#39332d;
+  --border:#4a423a; --border-strong:#5c5349;
+  --text:#eae4dc; --text-muted:#b3a89a; --text-faint:#8a8073;
+  --accent:#8fa87a; --accent-soft:#a7bd93;
+  --warm:#d79a6e; --warm-soft:#e6b391;
+  --success:#8fa87a; --band:#2a2520; --current:#262a22;
+  --highlight:#9d88ff; --highlight-soft:#b6a6ff;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.32);
+}
+
+/* 2. Ink (Near black) */
+:root[data-theme="dark"][data-dark="ink"]{
+  --bg:#0e0e0f; --surface:#161617; --surface-2:#1c1c1e; --surface-3:#242427;
+  --border:#2a2a2d; --border-strong:#3c3c41;
+  --text:#eceae7; --text-muted:#9d9a95; --text-faint:#6a6763;
+  --accent:#9db38c; --accent-soft:#b6c9a7;
+  --warm:#d08a63; --warm-soft:#e0a483;
+  --success:#9db38c; --band:#211f1b; --current:#1c211c;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.4);
+}
+
+/* 3. Slate (Cool blue-gray) */
+:root[data-theme="dark"][data-dark="slate"]{
+  --bg:#0f1216; --surface:#171b21; --surface-2:#1e232a; --surface-3:#272d36;
+  --border:#2b323b; --border-strong:#3f4854;
+  --text:#f0f3f6; --text-muted:#9aa5b1; --text-faint:#69737f;
+  --accent:#7fb3a5; --accent-soft:#9ccabd;
+  --warm:#d79a6e; --warm-soft:#e6b391;
+  --success:#7fb3a5; --band:#221f1a; --current:#182420;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 10px 28px rgba(0,0,0,.38);
+}
+
+/* 4. Umber (Sepia brown) */
+:root[data-theme="dark"][data-dark="umber"]{
+  --bg:#14100c; --surface:#1c1712; --surface-2:#231d16; --surface-3:#2d251c;
+  --border:#332a20; --border-strong:#4a3d2e;
+  --text:#efe6d8; --text-muted:#a89a86; --text-faint:#7a6d5c;
+  --accent:#a3ad72; --accent-soft:#bcc48f;
+  --warm:#cf8f5c; --warm-soft:#e0a97c;
+  --success:#a3ad72; --band:#241d12; --current:#20241a;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.42);
+}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg)}
+body{color:var(--text);font-family:var(--sans);line-height:1.5;font-size:.9rem;overflow-x:hidden}
+a{color:inherit}
+
+/* ---- shell ---- */
+.app{display:grid;grid-template-columns:360px minmax(0,1fr);gap:1.5rem;
+     max-width:1680px;margin:0 auto;padding:1.5rem 1.5rem 4rem}
+@media (max-width:1150px){.app{grid-template-columns:1fr;padding:1.25rem 1rem 4rem}}
+
+.eyebrow{font-family:var(--mono);font-size:.63rem;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);margin-bottom:.3rem;white-space:nowrap}
+h1{font-family:var(--display);font-weight:700;font-size:1.85rem;margin:0 0 .2rem;line-height:1;letter-spacing:.02em;white-space:nowrap}
+.sub{color:var(--text-muted);font-size:.78rem;margin:0 0 .9rem;line-height:1.4}
+
+/* ---- sidebar ---- */
+.sidebar-inner{display:flex;flex-direction:column;gap:.6rem}
+@media (min-width:1151px){
+  .sidebar-inner{position:sticky;top:1.25rem;max-height:calc(100vh - 2.5rem);
+    overflow-y:auto;overflow-x:hidden;padding-right:.45rem;scrollbar-width:thin}
+  .sidebar-inner::-webkit-scrollbar{width:7px}
+  .sidebar-inner::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:4px}
+}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;box-shadow:var(--shadow)}
+
+.sec-label{font-family:var(--sans);font-size:.7rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+  color:var(--text-faint);display:flex;align-items:center;gap:.35rem;margin:0 0 .5rem;white-space:nowrap}
+.sec-label .rule{flex:1;height:1px;background:var(--border)}
+
+/* ---- unified compact aligned inputs ---- */
+.fields{display:grid;grid-template-columns:1fr auto;align-items:center;gap:.3rem .5rem}
+.fields label{font-size:.75rem;color:var(--text-muted);white-space:nowrap;display:flex;align-items:center;min-width:0}
+.fields input[type=number],.fields input[type=text],.fields select{
+  font-family:var(--num);font-size:.82rem;font-weight:600;color:var(--text);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:4px;
+  padding:.14rem .4rem;width:5.8rem;min-width:0;font-variant-numeric:tabular-nums;
+  text-align:right;line-height:1.4;height:1.55rem}
+.fields select{text-align:right;text-align-last:right;width:7.2rem}
+.fields input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.fields input[type=number]::-webkit-outer-spin-button,
+.fields input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.fields input:focus,.fields select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.fields input:disabled{opacity:.5;cursor:not-allowed;background:var(--surface-3)}
+
+/* attached unit input wrapper (% badge) */
+.unit-input{display:inline-flex;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:0 .25rem;height:1.55rem;width:fit-content}
+.unit-input:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+.unit-input input{border:none!important;background:transparent!important;outline:none!important;box-shadow:none!important;padding:.1rem .2rem!important;height:100%!important;width:4.4rem;text-align:right;font-family:var(--num);font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+.unit-input input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.unit-input input[type=number]::-webkit-outer-spin-button,.unit-input input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.unit-input .unit{font-family:var(--num);font-size:.75rem;font-weight:600;color:var(--text-muted);margin-left:.15rem;user-select:none}
+
+.checkrow{grid-column:1 / -1;display:flex;align-items:center;gap:.45rem;font-size:.75rem;color:var(--text-muted);cursor:pointer;user-select:none;white-space:nowrap}
+.checkrow input{width:.9rem;height:.9rem;accent-color:var(--accent);margin:0;cursor:pointer}
+.note{grid-column:1 / -1;font-size:.68rem;color:var(--text-faint);line-height:1.35;margin:.15rem 0 .2rem}
+
+/* ---- button bar ---- */
+.btn-bar{display:flex;flex-wrap:nowrap;gap:.4rem;margin-top:.4rem}
+.btn{font-family:var(--sans);font-size:.72rem;font-weight:500;color:var(--text-muted);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
+  padding:.28rem .55rem;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s,color .12s;text-align:center}
+.btn:hover{border-color:var(--accent);color:var(--accent);background:var(--surface-3)}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent-soft);color:#fff}
+.btn-theme{min-width:8.2rem;flex:none}
+.badge{font-family:var(--sans);font-size:.65rem;font-weight:600;padding:.15rem .4rem;border-radius:4px;background:var(--surface-3);color:var(--text-muted);white-space:nowrap}
+.badge-success{background:rgba(74,103,65,.15);color:var(--accent);border:1px solid rgba(74,103,65,.3)}
+.badge-highlight{background:rgba(106,72,234,.15);color:var(--highlight);border:1px solid rgba(106,72,234,.3)}
+
+/* ---- textarea & paste import box ---- */
+textarea.paste-box{
+  width:100%;height:85px;resize:vertical;font-family:var(--mono);font-size:.7rem;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:5px;
+  color:var(--text);padding:.35rem .45rem;line-height:1.3;margin-top:.25rem}
+
+/* ---- main column ---- */
+.main-inner{display:flex;flex-direction:column;gap:1.1rem}
+
+/* ---- live userscript banner ---- */
+.live-banner{background:rgba(106,72,234,.08);border:1px solid var(--highlight-soft);border-radius:8px;padding:.5rem .8rem;display:flex;justify-content:space-between;align-items:center;font-size:.78rem}
+.live-banner strong{color:var(--highlight)}
+
+/* ---- verdict card ---- */
+.verdict{
+  background:linear-gradient(135deg,var(--surface) 0%,var(--surface-2) 100%);
+  border:1.5px solid var(--border-strong);border-radius:12px;
+  padding:1.1rem 1.25rem;box-shadow:var(--shadow)}
+.verdict-eyebrow{font-family:var(--sans);font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:.2rem;white-space:nowrap}
+.verdict-headline{font-family:var(--display);font-size:1.8rem;font-weight:700;line-height:1.1;margin:0 0 .5rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.verdict-headline span.rate{color:var(--highlight)}
+.verdict-headline span.spec{color:var(--warm)}
+.verdict-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-top:.85rem}
+.kpi-tile{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.55rem .75rem}
+.kpi-label{font-family:var(--sans);font-size:.68rem;letter-spacing:.03em;font-weight:600;text-transform:uppercase;color:var(--text-faint);margin-bottom:.15rem;white-space:nowrap}
+.kpi-val{font-family:var(--num);font-size:1.3rem;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap}
+.kpi-sub{font-size:.7rem;color:var(--text-muted);margin-top:.15rem;white-space:nowrap}
+
+/* ---- table styles ---- */
+.table-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.85rem;box-shadow:var(--shadow);overflow-x:auto}
+.table-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.65rem;flex-wrap:nowrap;gap:.5rem}
+.table-title{font-family:var(--display);font-size:1.25rem;font-weight:700;margin:0;color:var(--text);white-space:nowrap}
+
+table.matrix{width:100%;min-width:920px;border-collapse:collapse;font-size:.8rem}
+table.matrix th,table.matrix td{padding:.48rem .55rem;border-bottom:1px solid var(--border);white-space:nowrap}
+table.matrix th{font-family:var(--sans);font-size:.72rem;letter-spacing:.02em;color:var(--text-muted);background:var(--surface-2);font-weight:600}
+table.matrix tbody tr:hover{background:var(--surface-2)}
+table.matrix td.num{font-family:var(--num);font-variant-numeric:tabular-nums;text-align:right}
+table.matrix th.num{text-align:right}
+table.matrix .stat-tag{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;margin-right:.35rem;vertical-align:middle}
+
+/* Exact in-game colors from Queslar live UI */
+.stat-strength{color:#ef4444;font-weight:600}
+.stat-health{color:#22c55e;font-weight:600}
+.stat-dexterity{color:#eab308;font-weight:600}
+.stat-agility{color:#3b82f6;font-weight:600}
+.stat-rate{color:#8b5cf6;font-weight:600}
+.stat-partner{color:#06b6d4;font-weight:600}
+
+.tag-strength{background:#ef4444}
+.tag-health{background:#22c55e}
+.tag-dexterity{background:#eab308}
+.tag-agility{background:#3b82f6}
+.tag-rate{background:#8b5cf6}
+.tag-partner{background:#06b6d4}
+
+/* ---- sensitivity sweep graph ---- */
+.sweep-wrap{display:flex;flex-direction:column;gap:.35rem;margin-top:.6rem}
+.sweep-bar-row{display:grid;grid-template-columns:6.5rem 1fr 5.5rem 5rem;align-items:center;gap:.65rem;font-size:.75rem;white-space:nowrap}
+.sweep-bar-bg{height:1.25rem;background:var(--surface-2);border-radius:4px;position:relative;overflow:hidden;border:1px solid var(--border)}
+.sweep-bar-fill{height:100%;background:linear-gradient(90deg,var(--surface-3),var(--accent-soft));border-radius:3px;transition:width .15s}
+.sweep-bar-fill.optimal{background:linear-gradient(90deg,var(--highlight-soft),var(--highlight))}
+.sweep-bar-fill.current{background:linear-gradient(90deg,var(--warm-soft),var(--warm))}
+
+/* ---- collapsible details sections ---- */
+details.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.65rem .85rem;box-shadow:var(--shadow)}
+details.panel summary{font-family:var(--sans);font-weight:600;font-size:.82rem;color:var(--text);cursor:pointer;user-select:none;display:flex;align-items:center;gap:.4rem;white-space:nowrap}
+details.panel summary::marker{color:var(--text-faint)}
+.panel-body{margin-top:.75rem;padding-top:.6rem;border-top:1px solid var(--border);font-size:.76rem;line-height:1.55;color:var(--text-muted)}
+
+/* step by step rail */
+.step-rail{display:flex;flex-direction:column;gap:.45rem}
+.step-row{display:grid;grid-template-columns:1.6rem 1fr;gap:.55rem;align-items:baseline}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:1.35rem;height:1.35rem;border-radius:50%;
+  background:var(--surface-3);color:var(--text);font-family:var(--num);font-size:.72rem;font-weight:700}
+.step-title{font-weight:600;color:var(--text);font-size:.78rem}
+.step-code{font-family:var(--mono);font-size:.7rem;background:var(--surface-2);padding:.1rem .3rem;border-radius:3px;border:1px solid var(--border)}
+
+/* ---- fixed tooltips ---- */
+.ico{display:inline-flex;align-items:center;justify-content:center;width:.85rem;height:.85rem;
+  border-radius:50%;border:1px solid var(--text-faint);color:var(--text-faint);
+  font-size:.55rem;font-weight:700;cursor:help;flex:none;font-style:normal;margin-left:.3rem;user-select:none;transition:border-color .12s,color .12s}
+.ico:hover,.ico:focus{border-color:var(--accent);color:var(--accent);outline:none}
+
+#tip{position:fixed;z-index:9999;max-width:22rem;background:#1a1918;color:#f4eedf;white-space:pre-line;
+  font-family:var(--sans);font-size:.73rem;font-weight:400;line-height:1.45;
+  padding:.45rem .65rem;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.35);
+  opacity:0;visibility:hidden;transition:opacity .12s;pointer-events:none;left:0;top:0}
+#tip.on{opacity:1;visibility:visible}
+
+/* back to top */
+.back-top{position:fixed;bottom:1.5rem;right:1.5rem;width:2.2rem;height:2.2rem;border-radius:50%;
+  background:var(--surface-2);border:1px solid var(--border-strong);color:var(--text);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--shadow);
+  opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s;z-index:90}
+.back-top.visible{opacity:1;visibility:visible}
+</style>
+</head>
+<body>
+
+<div id="tip"></div>
+
+<div class="app">
+  <!-- ======================== LEFT SIDEBAR ======================== -->
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+      <div>
+        <div class="eyebrow">Sculpture Grid &bull; Income Optimization</div>
+        <h1>Stat Rate Optimizer</h1>
+        <div class="sub">Closed-form break-even solver for Sculpture Grid budget: Stat Rate % vs Specific Stat Drop Rates.</div>
+      </div>
+
+      <!-- Quick action buttons: fixed width theme button prevents line-wrapping -->
+      <div class="btn-bar" style="margin-bottom:.2rem">
+        <button class="btn" id="btnReset">Reset Defaults</button>
+        <button class="btn" id="btnSaveDefault">Save as Default</button>
+        <!-- Standardized theme toggle cycling: Beach, Dark Beach, Ink, Slate, Umber -->
+        <button class="btn btn-theme" id="btnThemeToggle">Theme: Dark Beach</button>
+      </div>
+
+      <!-- 1. Live Userscript Handover Banner (Hidden if not launched from userscript) -->
+      <div class="live-banner" id="liveUserscriptBanner" hidden>
+        <div><strong>Live Data Ready:</strong> Handed over from Apoz userscript.</div>
+        <button class="btn btn-primary" id="btnApplyLive">Apply Live</button>
+      </div>
+
+      <!-- 2. Paste Profile Import Card -->
+      <div class="card" id="importCard">
+        <div class="sec-label">
+          <span>Live Profile Stat Boost Import</span>
+          <div class="rule"></div>
+          <span class="badge badge-success" id="parseStatusBadge">Ready</span>
+        </div>
+        <div class="note">Copy-paste from <b>Character &gt; Boosts &gt; Stat Boost</b> hover card:</div>
+        <textarea class="paste-box" id="profilePasteInput" placeholder="Paste 'Stat boost\n1.784,02%...' here"></textarea>
+        <div class="btn-bar">
+          <button class="btn btn-primary" id="btnApplyParsed">Parse &amp; Apply</button>
+          <button class="btn" id="btnLoadSample">Load Sample</button>
+          <button class="btn" id="btnClearPaste">Clear</button>
+        </div>
+        <div id="parseSummary" class="note" style="margin-top:.35rem;color:var(--text)"></div>
+      </div>
+
+      <!-- 3. Base Stat Boost Sources (Split into in-game sources) -->
+      <div class="card">
+        <div class="sec-label">
+          <span>Base Stat Boost Sources</span>
+          <div class="rule"></div>
+        </div>
+        <div class="fields">
+          <label for="inpEnchants">Enchants (Equipment)<span class="ico" tabindex="0" data-tip="Equipment enchantments contribution to Base.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpEnchants" value="525.7" step="0.1"><span class="unit">%</span></div>
+
+          <label for="inpPetsStat">Pets (Stat)<span class="ico" tabindex="0" data-tip="Pets passive stat boost contribution to Base.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpPetsStat" value="0.0" step="0.1"><span class="unit">%</span></div>
+
+          <label for="inpVillageStable">Village Stable<span class="ico" tabindex="0" data-tip="Village Stable building bonus to Base.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpVillageStable" value="360.0" step="1"><span class="unit">%</span></div>
+
+          <label for="inpVillageExplorations">Village Explorations<span class="ico" tabindex="0" data-tip="Exploration passives contribution to Base.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpVillageExplorations" value="66.0" step="1"><span class="unit">%</span></div>
+
+          <label for="inpSkillTreeStat">Skill Tree<span class="ico" tabindex="0" data-tip="Character skill tree nodes contributing to Base.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpSkillTreeStat" value="0.0" step="0.1"><span class="unit">%</span></div>
+
+          <label for="inpCurrentSculptureRate">Current Sculptures<span class="ico" tabindex="0" data-tip="Your current grid's displayed Stat Rate %. This is replaced by the optimized grid bonus.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpCurrentSculptureRate" value="22.9" step="0.1"><span class="unit">%</span></div>
+
+          <label for="inpPvpTile">PvP Stat Tile<span class="ico" tabindex="0" data-tip="Village PvP map tile modifier. Multiplies (1 + Base).">i</span></label>
+          <div class="unit-input"><input type="number" id="inpPvpTile" value="10.31" step="0.1"><span class="unit">%</span></div>
+
+          <label for="inpVipPct">VIP Premium<span class="ico" tabindex="0" data-tip="Flat +10% while active. Additive inside Premium category.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpVipPct" value="10.00" step="1"><span class="unit">%</span></div>
+
+          <label for="inpPotionPct">Stat Potion<span class="ico" tabindex="0" data-tip="Active potion effect. Additive with VIP inside Premium category.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpPotionPct" value="48.93" step="0.1"><span class="unit">%</span></div>
+
+          <label for="inpEventPct">Event Boost<span class="ico" tabindex="0" data-tip="Global event boost multiplier category.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpEventPct" value="0.00" step="1"><span class="unit">%</span></div>
+        </div>
+      </div>
+
+      <!-- 4. Character Base Stats (Denominator C_i) -->
+      <div class="card">
+        <div class="sec-label">
+          <span>Character Base Stats</span>
+          <div class="rule"></div>
+        </div>
+        <div class="note">Unbuffed base stats feeding drop chance denominator C_i:</div>
+        <div class="fields" style="margin-top:.3rem">
+          <label for="inpCharStrength"><span class="stat-tag tag-strength"></span>Strength<span class="ico" tabindex="0" data-tip="Raw character Strength. Higher stat increases drop rarity via denominator C_i.">i</span></label>
+          <input type="text" id="inpCharStrength" value="521,939" style="text-align:right">
+
+          <label for="inpCharHealth"><span class="stat-tag tag-health"></span>Health<span class="ico" tabindex="0" data-tip="Raw character Health. Feeds denominator C_i.">i</span></label>
+          <input type="text" id="inpCharHealth" value="485,400" style="text-align:right">
+
+          <label for="inpCharDexterity"><span class="stat-tag tag-dexterity"></span>Dexterity<span class="ico" tabindex="0" data-tip="Raw character Dexterity. Feeds denominator C_i.">i</span></label>
+          <input type="text" id="inpCharDexterity" value="485,400" style="text-align:right">
+
+          <label for="inpCharAgility"><span class="stat-tag tag-agility"></span>Agility<span class="ico" tabindex="0" data-tip="Raw character Agility. Feeds denominator C_i.">i</span></label>
+          <input type="text" id="inpCharAgility" value="485,400" style="text-align:right">
+        </div>
+      </div>
+
+      <!-- 5. External Stat Drop Modifiers (Combat Pets / Gear) -->
+      <div class="card">
+        <div class="sec-label">
+          <span>External Drop % (Pets / Gear)</span>
+          <div class="rule"></div>
+        </div>
+        <div class="note">Specific drop rate modifiers from your Combat Pets &amp; gear:</div>
+        <div class="fields" style="margin-top:.3rem">
+          <label for="inpExtStrength"><span class="stat-tag tag-strength"></span>Pet Strength Drop<span class="ico" tabindex="0" data-tip="E.g. 600% from combat pet modifier.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpExtStrength" value="600.0" step="10"><span class="unit">%</span></div>
+
+          <label for="inpExtHealth"><span class="stat-tag tag-health"></span>Pet Health Drop<span class="ico" tabindex="0" data-tip="Combat pet Health drop rate %.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpExtHealth" value="0.0" step="10"><span class="unit">%</span></div>
+
+          <label for="inpExtDexterity"><span class="stat-tag tag-dexterity"></span>Pet Dex Drop<span class="ico" tabindex="0" data-tip="Combat pet Dexterity drop rate %.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpExtDexterity" value="0.0" step="10"><span class="unit">%</span></div>
+
+          <label for="inpExtAgility"><span class="stat-tag tag-agility"></span>Pet Agility Drop<span class="ico" tabindex="0" data-tip="Combat pet Agility drop rate %.">i</span></label>
+          <div class="unit-input"><input type="number" id="inpExtAgility" value="0.0" step="10"><span class="unit">%</span></div>
+        </div>
+      </div>
+
+      <!-- 6. Sanctum Map Calibration -->
+      <div class="card">
+        <div class="sec-label">
+          <span>Sanctum Map Calibration</span>
+          <div class="rule"></div>
+        </div>
+        <div class="fields">
+          <label for="inpSanctumLevel">
+            Average Sanctum Level
+            <span class="ico" tabindex="0" data-tip="Map item level (e.g. 78,189). Drives modifier magnitude via pow(iLevel-100, 0.49).">i</span>
+          </label>
+          <input type="text" id="inpSanctumLevel" value="78,189" style="text-align:right">
+
+          <label for="selTierRate">
+            Stat Rate Tier
+            <span class="ico" tabindex="0" data-tip="Tier roll for Stat Rate on sanctum maps (e.g. T13 = +275% tier boost).">i</span>
+          </label>
+          <select id="selTierRate"></select>
+
+          <label for="selTierSpec">
+            Specific Stat Tier
+            <span class="ico" tabindex="0" data-tip="Tier roll for specific stat drop rates on sanctum maps (e.g. T13).">i</span>
+          </label>
+          <select id="selTierSpec"></select>
+
+          <label for="selMaxSanctums">
+            Max Modifiers per Map
+            <span class="ico" tabindex="0" data-tip="Maximum active player modifiers on one sanctum map (2 is reliable; 3 or 4 is high RNG).">i</span>
+          </label>
+          <select id="selMaxSanctums">
+            <option value="0">0 (Battling / None)</option>
+            <option value="1">1 Modifier</option>
+            <option value="2" selected>2 Modifiers</option>
+            <option value="3">3 Modifiers</option>
+            <option value="4">4 Modifiers</option>
+            <option value="all">All Modifiers</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 7. Combat & Partner Parameters -->
+      <div class="card">
+        <div class="sec-label">
+          <span>Combat &amp; Partner Speed</span>
+          <div class="rule"></div>
+        </div>
+        <div class="fields">
+          <label>
+            Battle Actions / hr
+            <span class="ico" tabindex="0" data-tip="Fixed at 360/hr in character combat (10.0s static action interval).">i</span>
+          </label>
+          <div style="font-family:var(--num);font-weight:700;text-align:right;padding-right:.4rem">360 / hr</div>
+
+          <label for="inpPartnerSpeedPoints">
+            Partner Speed Points
+            <span class="ico" tabindex="0" data-tip="Speed points invested into partners. Formula: 18 / (0.1 + Speed/(Speed+10000)). Floor 16.36s.">i</span>
+          </label>
+          <input type="number" id="inpPartnerSpeedPoints" value="5000" min="0" step="500">
+
+          <label id="lblPartnerSeconds">Partner Interval</label>
+          <div id="outPartnerSeconds" style="font-family:var(--num);font-weight:600;text-align:right;padding-right:.4rem">24.2s</div>
+
+          <div class="checkrow" style="margin-top:.3rem">
+            <input type="checkbox" id="chkPartnerDrops" checked>
+            <label for="chkPartnerDrops" style="cursor:pointer">Partner Stat Drops Active</label>
+          </div>
+
+          <label for="inpPartnerCount" id="lblPartnerCount">
+            Active Partners
+            <span class="ico" tabindex="0" data-tip="Partners contributing stat drops via 'partnerDropStatsAsCharacterStats' capstone.">i</span>
+          </label>
+          <input type="number" id="inpPartnerCount" value="4" min="0" max="10" step="1">
+
+          <label for="inpStatGainMultiplier">
+            Stat Drop Amount (xN)
+            <span class="ico" tabindex="0" data-tip="(1 + statGainFlat) × (1 + statGainPercentage). E.g. (1+1.49)×(1+5.43) = 16.01.">i</span>
+          </label>
+          <input type="number" id="inpStatGainMultiplier" value="16.01" step="0.01">
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ======================== MAIN COLUMN ======================== -->
+  <main class="main-inner">
+    <!-- v5 Verdict Card -->
+    <div class="verdict" id="verdictCard">
+      <div class="verdict-eyebrow">Optimal Sculpture Grid Allocation</div>
+      <div class="verdict-headline" id="verdictHeadline">
+        OPTIMAL SPLIT: <span class="rate" id="verdictRatePct">175.0%</span> Stat Rate &bull; <span class="spec" id="verdictSpecBudget">5,125.0%</span> Specific
+      </div>
+      <div class="sub" id="verdictSub" style="margin-bottom:.5rem">
+        Budget division: <b id="verdictRateBudget">875</b> pts into Stat Rate (5× cost) &bull; <b id="verdictSpecBudget2">5,125</b> pts distributed across active stats.
+      </div>
+      <div class="verdict-grid">
+        <div class="kpi-tile">
+          <div class="kpi-label">Marginal Break-Even</div>
+          <div class="kpi-val" id="kpiBreakEven">1.000×</div>
+          <div class="kpi-sub" id="kpiBreakEvenSub">Current: 35.28× (Under-invested)</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Projected Total Gain</div>
+          <div class="kpi-val" style="color:var(--accent)" id="kpiGain">+832.8%</div>
+          <div class="kpi-sub">vs Current Grid Allocation</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Total Stat Yield / hr</div>
+          <div class="kpi-val" id="kpiStatsPerHour">112.5k</div>
+          <div class="kpi-sub" id="kpiStatsPerDay">2.70m stats / day</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Global Stat Boost %</div>
+          <div class="kpi-val" id="kpiStatBoostTotal">2,050.5%</div>
+          <div class="kpi-sub" id="kpiStatBoostSub">From 1,784.0% profile</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. Stats & Sanctum Matrix Table Card -->
+    <div class="table-card">
+      <div class="table-card-head">
+        <div>
+          <h2 class="table-title">Stats &amp; Sanctum Multiplier Matrix</h2>
+          <div class="sub" style="margin:0">Set target ratios on the grid and allow sanctum modifiers to optimize. Canonical order: Strength, Health, Dexterity, Agility.</div>
+        </div>
+        <div class="fields" style="display:inline-flex;align-items:center;gap:.4rem">
+          <label for="inpTotalBudget" style="font-weight:600">Grid Budget:</label>
+          <input type="number" id="inpTotalBudget" value="6000" min="0" step="100" style="width:5.4rem">
+        </div>
+      </div>
+
+      <table class="matrix" id="statsMatrixTable">
+        <thead>
+          <tr>
+            <th style="width:2.5rem;text-align:center">Grid</th>
+            <th style="min-width:12rem;text-align:left">Stat Name</th>
+            <th class="num" style="width:6rem">Target Ratio</th>
+            <th class="num" style="width:7rem">Optimal Grid %</th>
+            <th class="num" style="width:6.8rem">Sanctum Map %</th>
+            <th style="width:5rem;text-align:center">Sanctum Allowed</th>
+            <th class="num" style="width:5.8rem">Drop (1/N)</th>
+            <th class="num" style="width:6.5rem">Expected Drops / hr</th>
+          </tr>
+        </thead>
+        <tbody id="matrixTableBody">
+          <!-- Populated by JavaScript -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 2. Sanctum Multiplier Combinations Ranking Card -->
+    <div class="table-card" id="sanctumRankingsCard">
+      <div class="table-card-head">
+        <div>
+          <h2 class="table-title">Sanctum Combinations Ranking</h2>
+          <div class="sub" style="margin:0">Best map modifier combinations under current <b id="lblMaxSanctumsText">2 Max Modifiers</b> limit.</div>
+        </div>
+      </div>
+      <table class="matrix" id="sanctumRankingsTable">
+        <thead>
+          <tr>
+            <th style="width:2.5rem;text-align:center">Rank</th>
+            <th style="min-width:17rem;text-align:left">Sanctum Modifiers Active</th>
+            <th class="num" style="width:7.5rem">Optimal Stat Rate</th>
+            <th class="num" style="width:7.5rem">Optimal Specific</th>
+            <th class="num" style="width:7rem">Est. Stats / hr</th>
+            <th class="num" style="width:5.5rem">Relative Yield</th>
+          </tr>
+        </thead>
+        <tbody id="sanctumRankingsBody">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3. Allocation Sweep & Sensitivity Curve -->
+    <div class="table-card">
+      <div class="table-card-head">
+        <div>
+          <h2 class="table-title">Budget Allocation Sweep (Stat Rate vs Specific)</h2>
+          <div class="sub" style="margin:0">Sweep of grid budget into Stat Rate (0% to 100%), showing the break-even crossing point.</div>
+        </div>
+      </div>
+      <div class="sweep-wrap" id="sweepContainer">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+
+    <!-- 4. Calculation Steps Panel (Collapsible) -->
+    <details class="panel" id="stepsPanel">
+      <summary>
+        <span>Calculation Steps (Click to expand)</span>
+        <span class="badge">Exact Quadratic Solution</span>
+      </summary>
+      <div class="panel-body">
+        <div class="step-rail" id="calcStepsList">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </details>
+
+    <!-- 5. Formulas & Provenance Notes Panel (Collapsible) -->
+    <details class="panel" id="formulasPanel">
+      <summary>
+        <span>Formulas, Constants &amp; Provenance Notes (Click to expand)</span>
+        <span class="badge badge-success">CODE + LIVE Validated</span>
+      </summary>
+      <div class="panel-body">
+        <p><b>Core Facts &amp; Provenance:</b></p>
+        <ul>
+          <li><b>Canonical Stat Order:</b> <span class="step-code">Strength &rarr; Health &rarr; Dexterity &rarr; Agility</span> is strictly preserved across all tables, formulas, and calculations.</li>
+          <li><b>Stat Drop Chance:</b> <code>statDrop.chance</code> from <span class="step-code">core/data/formulas/economy.json</span>:
+            <br><code>N = pow(25*(statValue + 1), 0.4) * breakpoint(statValue > 1e6) / (1 + statBoost) / (1 + statSpecific)</code>
+            <br>Where <code>breakpoint = 1 + 2*(statValue - 1000000)/1000000</code> past 1 million stats. Confirmed independently via official patch notes PATCH 1.2.3.0.
+          </li>
+          <li><b>Sanctum Modifier Scaling:</b> <span class="step-code">core/data/tables/modifier-tiers.json</span> &amp; <span class="step-code">roll-coefficients.json</span>:
+            <br>Roll formula: <code>pow(max(iLevel - 100, 1), 0.49) &times; levelMultiplier &times; tierMultiplier</code>.
+            <br>Stat Rate multiplier = <b>0.001</b> (e.g. at iLevel 78189, T13 &rarr; 91.57%).
+            <br>Specific Stat Drop multiplier = <b>0.005</b> (exactly <b>5&times; higher</b>, e.g. 457.85%).
+          </li>
+          <li><b>Sculpture Roll Coefficients:</b> <span class="step-code">core/data/tables/roll-coefficients.json</span>:
+            <br><code>statStrength/statHealth/statDexterity/statAgility</code> levelMultiplier = <b>0.005</b>.
+            <br><code>stat</code> (global stat rate) levelMultiplier = <b>0.001</b> (exactly <b>5× lower</b>).
+            <br><code>partnerExperience</code> levelMultiplier = <b>0.0005</b> (exactly <b>10× lower</b>).
+          </li>
+          <li><b>Partner Speed Curve:</b> <span class="step-code">core/data/formulas/partners.json</span>:
+            <br>Speed interval: <code>seconds = 18 / (0.1 + Speed / (Speed + 10000))</code>. Hard floor 16.36s.
+          </li>
+        </ul>
+      </div>
+    </details>
+  </main>
+</div>
+
+<!-- Floating Back to Top Button -->
+<button class="back-top" id="btnBackTop" title="Back to top">&uarr;</button>
+
+<script>
+/* ---------------------------------------------------------------------------
+   EQUIPMENT & SANCTUM TIER CURVE (from modifier-tiers.json)
+--------------------------------------------------------------------------- */
+var EQUIPMENT_TIERS = [
+  { tier: 1,  boostPct: 10,  multiplier: 1.10 },
+  { tier: 2,  boostPct: 20,  multiplier: 1.20 },
+  { tier: 3,  boostPct: 30,  multiplier: 1.30 },
+  { tier: 4,  boostPct: 40,  multiplier: 1.40 },
+  { tier: 5,  boostPct: 50,  multiplier: 1.50 },
+  { tier: 6,  boostPct: 75,  multiplier: 1.75 },
+  { tier: 7,  boostPct: 100, multiplier: 2.00 },
+  { tier: 8,  boostPct: 125, multiplier: 2.25 },
+  { tier: 9,  boostPct: 150, multiplier: 2.50 },
+  { tier: 10, boostPct: 175, multiplier: 2.75 },
+  { tier: 11, boostPct: 200, multiplier: 3.00 },
+  { tier: 12, boostPct: 250, multiplier: 3.50 },
+  { tier: 13, boostPct: 275, multiplier: 3.75 },
+  { tier: 14, boostPct: 300, multiplier: 4.00 },
+  { tier: 15, boostPct: 325, multiplier: 4.25 },
+  { tier: 16, boostPct: 350, multiplier: 4.50 }
+];
+
+function calcSanctumModPercent(iLevel, tierNumber, isSpecificStat) {
+  var tObj = EQUIPMENT_TIERS[Math.max(0, Math.min(15, tierNumber - 1))];
+  var tMult = tObj ? tObj.multiplier : 1.0;
+  var coef = isSpecificStat ? 0.005 : 0.001;
+  var baseTerm = Math.pow(Math.max(1, iLevel - 100), 0.49);
+  return baseTerm * coef * tMult * 100;
+}
+
+/* ---------------------------------------------------------------------------
+   PURE MATH & PARSER ENGINE
+--------------------------------------------------------------------------- */
+
+function parsePercent(str) {
+  if (!str) return 0;
+  var cleaned = String(str).replace(/\./g, '').replace(/,/g, '.').replace(/%/g, '').trim();
+  var val = parseFloat(cleaned);
+  return isNaN(val) ? 0 : val;
+}
+
+function parseFormattedNumber(str) {
+  if (!str) return 0;
+  var cleaned = String(str).replace(/\./g, '').replace(/,/g, '').trim();
+  var val = parseFloat(cleaned);
+  return isNaN(val) ? 0 : val;
+}
+
+function parseProfileStatBoost(text) {
+  if (!text || typeof text !== 'string') return null;
+
+  var result = {
+    totalStatBoostPct: 0,
+    categories: { basePct: 0, pvpPct: 0, premiumPct: 0, eventPct: 0 },
+    sources: {
+      enchantsPct: 0, petsPct: 0, villageStablePct: 0, villageExplorationsPct: 0,
+      skillTreePct: 0, sculpturesPct: 0, statTilePct: 0, vipPct: 0, potionPct: 0, eventPct: 0
+    },
+    baseWithoutSculpturesPct: 0
+  };
+
+  var lines = text.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+
+    if (/^Stat boost$/i.test(line) && lines[i + 1] && lines[i + 1].includes('%')) {
+      result.totalStatBoostPct = parsePercent(lines[i + 1]);
+    }
+    if (/^Enchants$/i.test(line) && lines[i + 1] && /Equipment/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.enchantsPct = parsePercent(lines[i + 2]);
+    }
+    if (/^Stat$/i.test(line) && lines[i + 1] && /Pets/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.petsPct = parsePercent(lines[i + 2]);
+    }
+    if (/^Stable$/i.test(line) && lines[i + 1] && /Village/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.villageStablePct = parsePercent(lines[i + 2]);
+    }
+    if (/^Explorations$/i.test(line) && lines[i + 1] && /Village/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.villageExplorationsPct = parsePercent(lines[i + 2]);
+    }
+    if (/^Stat$/i.test(line) && lines[i + 1] && /Skill tree/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.skillTreePct = parsePercent(lines[i + 2]);
+    }
+    if (/^Stat$/i.test(line) && lines[i + 1] && /Sculptures/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.sculpturesPct = parsePercent(lines[i + 2]);
+    }
+    if (/^Stat Tile$/i.test(line) && lines[i + 1] && /Village/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.statTilePct = parsePercent(lines[i + 2]);
+    }
+    if (/^VIP$/i.test(line) && lines[i + 1] && /Premium/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.vipPct = parsePercent(lines[i + 2]);
+    }
+    if (/^Stat$/i.test(line) && lines[i + 1] && /Potion/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.potionPct = parsePercent(lines[i + 2]);
+    }
+    if (/^Event$/i.test(line) && lines[i + 1] && /Event/i.test(lines[i + 1])) {
+      if (lines[i + 2] && lines[i + 2].includes('%')) result.sources.eventPct = parsePercent(lines[i + 2]);
+    }
+
+    if (/^Base$/i.test(line) && lines[i + 1] && lines[i + 1].includes('%')) {
+      result.categories.basePct = parsePercent(lines[i + 1]);
+    }
+    if (/^PvP$/i.test(line) && lines[i + 1] && lines[i + 1].includes('%')) {
+      result.categories.pvpPct = parsePercent(lines[i + 1]);
+    }
+    if (/^Premium$/i.test(line) && lines[i + 1] && lines[i + 1].includes('%') && (!lines[i - 1] || !/VIP/i.test(lines[i - 1]))) {
+      result.categories.premiumPct = parsePercent(lines[i + 1]);
+    }
+    if (/^Event$/i.test(line) && lines[i + 1] && lines[i + 1].includes('%') && (!lines[i - 1] || !/Event/i.test(lines[i - 1]))) {
+      result.categories.eventPct = parsePercent(lines[i + 1]);
+    }
+  }
+
+  var calcBase = result.sources.enchantsPct + result.sources.petsPct +
+    result.sources.villageStablePct + result.sources.villageExplorationsPct +
+    result.sources.skillTreePct + result.sources.sculpturesPct;
+  if (!result.categories.basePct && calcBase > 0) result.categories.basePct = calcBase;
+  if (!result.categories.pvpPct && result.sources.statTilePct > 0) result.categories.pvpPct = result.sources.statTilePct;
+
+  var calcPrem = result.sources.vipPct + result.sources.potionPct;
+  if (!result.categories.premiumPct && calcPrem > 0) result.categories.premiumPct = calcPrem;
+
+  result.baseWithoutSculpturesPct = Math.max(0, result.categories.basePct - result.sources.sculpturesPct);
+  return result;
+}
+
+function calcStatDropDenominator(statValue) {
+  var v = Math.max(0, Number(statValue) || 0);
+  var breakpointMult = v > 1000000 ? 1 + (2 * (v - 1000000)) / 1000000 : 1;
+  return Math.pow(25 * (v + 1), 0.4) * breakpointMult;
+}
+
+function optimizeSculptureGrid(params) {
+  var totalBudgetNormalized = params.totalBudgetNormalized != null ? params.totalBudgetNormalized : 6000;
+  var baseWithoutSculpturesPct = params.baseWithoutSculpturesPct != null ? params.baseWithoutSculpturesPct : 951.71;
+  var pvpPct = params.pvpPct != null ? params.pvpPct : 10.31;
+  var premiumPct = params.premiumPct != null ? params.premiumPct : 58.93;
+  var eventPct = params.eventPct != null ? params.eventPct : 0;
+  var currentSculptureStatRatePct = params.currentSculptureStatRatePct != null ? params.currentSculptureStatRatePct : 22.9;
+  var sanctumStatRatePct = params.sanctumStatRatePct != null ? params.sanctumStatRatePct : 0;
+
+  // Canonical order: Strength, Health, Dexterity, Agility
+  var activeStats = params.activeStats || ['strength', 'health', 'dexterity', 'agility'];
+  var statRatios = params.statRatios || { strength: 1, health: 1, dexterity: 1, agility: 1 };
+  var statExternalBonusesPct = params.statExternalBonusesPct || { strength: 0, health: 0, dexterity: 0, agility: 0 };
+  var statValues = params.statValues || { strength: 521939, health: 485400, dexterity: 485400, agility: 485400 };
+  var sanctumStatMultipliersPct = params.sanctumStatMultipliersPct || { strength: 0, health: 0, dexterity: 0, agility: 0 };
+
+  // Partner XP ratio handling
+  var partnerXpRatio = params.partnerXpRatio != null ? params.partnerXpRatio : 0;
+  var partnerXpActive = params.partnerXpActive != null ? params.partnerXpActive : false;
+
+  var validStats = activeStats.filter(function(st) { return (statRatios[st] || 0) > 0; });
+  var W_stats = validStats.reduce(function(sum, st) { return sum + (statRatios[st] || 0); }, 0);
+  var effectivePxpRatio = (partnerXpActive && partnerXpRatio > 0) ? partnerXpRatio : 0;
+  var W_total = W_stats + effectivePxpRatio;
+
+  // Partner XP takes budget proportionally to its ratio, and costs 10x per %
+  var partnerXpBudgetNormalized = W_total > 0 ? (effectivePxpRatio / W_total) * totalBudgetNormalized : 0;
+  var partnerXpPct = partnerXpBudgetNormalized / 10;
+  var B_avail = Math.max(0, totalBudgetNormalized - partnerXpBudgetNormalized);
+
+  var M_ext = (1 + pvpPct / 100) * (1 + premiumPct / 100) * (1 + eventPct / 100);
+  var s_rate = sanctumStatRatePct / 100;
+
+  var Base_other = baseWithoutSculpturesPct / 100;
+  var alpha = (1 + Base_other) * M_ext * (1 + s_rate);
+  var beta = (M_ext * (1 + s_rate)) / 5;
+
+  if (validStats.length === 0 || W_stats <= 0) {
+    return {
+      optimalStatRateNormalized: B_avail,
+      optimalStatRatePct: B_avail / 5,
+      optimalSpecificBudgetNormalized: 0,
+      partnerXpBudgetNormalized: partnerXpBudgetNormalized,
+      partnerXpPct: partnerXpPct,
+      statAllocationsNormalized: {},
+      statAllocationsPct: {},
+      breakEvenRatioAtCurrent: 1.0,
+      breakEvenRatioAtOptimal: 1.0,
+      currentStatRateNormalized: Math.min(B_avail, currentSculptureStatRatePct * 5),
+      currentUtility: 0,
+      optimalUtility: 0,
+      gainPct: 0,
+      evalUtility: function() { return 0; }
+    };
+  }
+
+  var Gamma = 0;
+  var Delta = 0;
+  var statTerms = {};
+
+  for (var i = 0; i < validStats.length; i++) {
+    var st = validStats[i];
+    var w_i = statRatios[st] || 0;
+    var D_0 = (statExternalBonusesPct[st] || 0) / 100;
+    var s_i = (sanctumStatMultipliersPct[st] || 0) / 100;
+    var C_i = calcStatDropDenominator(statValues[st] || 0);
+
+    var gamma_i = (1 + D_0 + B_avail * (w_i / W_stats)) * (1 + s_i);
+    var delta_i = (w_i / W_stats) * (1 + s_i);
+    var K_i = w_i / C_i;
+
+    Gamma += K_i * gamma_i;
+    Delta += K_i * delta_i;
+
+    statTerms[st] = { w_i: w_i, D_0: D_0, s_i: s_i, C_i: C_i, gamma_i: gamma_i, delta_i: delta_i, K_i: K_i };
+  }
+
+  var unconstrainedOptimalXRate = 0.5 * (Gamma / Delta - 5 * (1 + Base_other));
+  var optimalStatRateNormalized = Math.max(0, Math.min(B_avail, unconstrainedOptimalXRate));
+  var optimalStatRatePct = optimalStatRateNormalized / 5;
+  var optimalSpecificBudgetNormalized = B_avail - optimalStatRateNormalized;
+
+  var statAllocationsNormalized = {};
+  var statAllocationsPct = {};
+  for (var j = 0; j < validStats.length; j++) {
+    var statKey = validStats[j];
+    var frac = statRatios[statKey] / W_stats;
+    statAllocationsNormalized[statKey] = optimalSpecificBudgetNormalized * frac;
+    statAllocationsPct[statKey] = statAllocationsNormalized[statKey];
+  }
+
+  function evalUtility(x) {
+    var statRateTerm = alpha + beta * x;
+    var specTerm = Gamma - Delta * x;
+    return statRateTerm * specTerm;
+  }
+
+  function calcMarginalRatio(x) {
+    var meRate = beta * (Gamma - Delta * x);
+    var meSpec = Delta * (alpha + beta * x);
+    return meSpec > 0 ? meRate / meSpec : 1.0;
+  }
+
+  var currentStatRateNormalized = Math.min(B_avail, currentSculptureStatRatePct * 5);
+  var currentUtility = evalUtility(currentStatRateNormalized);
+  var optimalUtility = evalUtility(optimalStatRateNormalized);
+  var gainPct = currentUtility > 0 ? ((optimalUtility - currentUtility) / currentUtility) * 100 : 0;
+
+  return {
+    optimalStatRateNormalized: optimalStatRateNormalized,
+    optimalStatRatePct: optimalStatRatePct,
+    optimalSpecificBudgetNormalized: optimalSpecificBudgetNormalized,
+    partnerXpBudgetNormalized: partnerXpBudgetNormalized,
+    partnerXpPct: partnerXpPct,
+    statAllocationsNormalized: statAllocationsNormalized,
+    statAllocationsPct: statAllocationsPct,
+    currentStatRateNormalized: currentStatRateNormalized,
+    currentUtility: currentUtility,
+    optimalUtility: optimalUtility,
+    gainPct: gainPct,
+    breakEvenRatioAtCurrent: calcMarginalRatio(currentStatRateNormalized),
+    breakEvenRatioAtOptimal: calcMarginalRatio(optimalStatRateNormalized),
+    evalUtility: evalUtility,
+    alpha: alpha,
+    beta: beta,
+    Gamma: Gamma,
+    Delta: Delta,
+    statTerms: statTerms,
+    B_avail: B_avail,
+    W_stats: W_stats,
+    W_total: W_total
+  };
+}
+
+// Test Seam
+window.__SCULPTURE_OPT_FOR_TEST = {
+  parseProfileStatBoost: parseProfileStatBoost,
+  calcStatDropDenominator: calcStatDropDenominator,
+  optimizeSculptureGrid: optimizeSculptureGrid,
+  calcSanctumModPercent: calcSanctumModPercent
+};
+
+/* ---------------------------------------------------------------------------
+   UI & DOM CONTROLLER
+--------------------------------------------------------------------------- */
+
+var STAT_KEYS = ['strength', 'health', 'dexterity', 'agility'];
+var STAT_META = {
+  strength: { name: 'Strength Drop Rate', class: 'stat-strength', tagClass: 'tag-strength' },
+  health: { name: 'Health Drop Rate', class: 'stat-health', tagClass: 'tag-health' },
+  dexterity: { name: 'Dexterity Drop Rate', class: 'stat-dexterity', tagClass: 'tag-dexterity' },
+  agility: { name: 'Agility Drop Rate', class: 'stat-agility', tagClass: 'tag-agility' }
+};
+
+var DEFAULTS = {
+  theme: 'dark-beach',
+  totalBudget: 6000,
+  baseSources: {
+    enchants: 525.7,
+    pets: 0.0,
+    stable: 360.0,
+    explorations: 66.0,
+    skillTree: 0.0,
+    sculptures: 22.9
+  },
+  pvpTile: 10.31,
+  vipPct: 10.0,
+  potionPct: 48.93,
+  eventPct: 0.0,
+  charStats: {
+    strength: 521939,
+    health: 485400,
+    dexterity: 485400,
+    agility: 485400
+  },
+  externalDrops: {
+    strength: 600.0,
+    health: 0.0,
+    dexterity: 0.0,
+    agility: 0.0
+  },
+  sanctum: {
+    level: 78189,
+    tierRate: 13,
+    tierSpec: 13,
+    maxModifiers: '2'
+  },
+  partner: {
+    speedPoints: 5000,
+    dropsActive: true,
+    count: 4
+  },
+  statGainMultiplier: 16.01,
+  matrix: {
+    statRate: { allowed: true },
+    strength: { active: true, ratio: 1, allowed: true },
+    health: { active: true, ratio: 1, allowed: true },
+    dexterity: { active: true, ratio: 1, allowed: true },
+    agility: { active: true, ratio: 1, allowed: true },
+    partnerXp: { active: true, ratio: 0, allowed: false }
+  }
+};
+
+var state = JSON.parse(JSON.stringify(DEFAULTS));
+
+function fmt(num, decimals) {
+  if (decimals == null) decimals = 1;
+  return Number(num).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function fmtInt(num) {
+  return Math.round(Number(num) || 0).toLocaleString('en-US');
+}
+
+function fmtK(num) {
+  if (num >= 1e6) return (num / 1e6).toFixed(2) + 'm';
+  if (num >= 1e3) return (num / 1e3).toFixed(1) + 'k';
+  return (Number(num) || 0).toFixed(0);
+}
+
+// Tooltip engine
+var tipEl = null, tipFor = null;
+function showTip(el) {
+  var text = el.getAttribute('data-tip');
+  if (!text) return;
+  tipFor = el;
+  tipEl.textContent = text;
+  tipEl.classList.add('on');
+  var r = el.getBoundingClientRect();
+  var t = tipEl.getBoundingClientRect();
+  var left = Math.min(Math.max(8, r.left + r.width / 2 - t.width / 2), window.innerWidth - t.width - 8);
+  var top = r.top - t.height - 8;
+  if (top < 8) top = r.bottom + 8;
+  tipEl.style.left = Math.round(left) + 'px';
+  tipEl.style.top = Math.round(top) + 'px';
+}
+function hideTip() {
+  tipFor = null;
+  if (tipEl) tipEl.classList.remove('on');
+}
+function initTips() {
+  tipEl = document.getElementById('tip');
+  document.addEventListener('mouseover', function(e) {
+    var el = e.target && e.target.closest && e.target.closest('[data-tip]');
+    if (el) showTip(el);
+  });
+  document.addEventListener('mouseout', function(e) {
+    var el = e.target && e.target.closest && e.target.closest('[data-tip]');
+    if (el && el === tipFor) hideTip();
+  });
+  document.addEventListener('focusin', function(e) {
+    var el = e.target && e.target.closest && e.target.closest('[data-tip]');
+    if (el) showTip(el);
+  });
+  document.addEventListener('focusout', hideTip);
+  window.addEventListener('scroll', hideTip, true);
+}
+
+// Theme cycling
+var THEMES = ['dark-beach', 'beach', 'ink', 'slate', 'umber'];
+var THEME_LABELS = {
+  'dark-beach': 'Theme: Dark Beach',
+  'beach': 'Theme: Beach (Light)',
+  'ink': 'Theme: Ink (Dark)',
+  'slate': 'Theme: Slate (Dark)',
+  'umber': 'Theme: Umber (Dark)'
+};
+
+function applyTheme(name) {
+  state.theme = name;
+  var root = document.documentElement;
+  var btn = document.getElementById('btnThemeToggle');
+
+  if (name === 'beach') {
+    root.setAttribute('data-theme', 'light');
+    root.removeAttribute('data-dark');
+  } else {
+    root.setAttribute('data-theme', 'dark');
+    root.setAttribute('data-dark', name);
+  }
+  if (btn) btn.textContent = THEME_LABELS[name] || name;
+  try { localStorage.setItem('APOZ_THEME', name); } catch(e) {}
+}
+
+function toggleTheme() {
+  var idx = THEMES.indexOf(state.theme);
+  var nextIdx = (idx + 1) % THEMES.length;
+  applyTheme(THEMES[nextIdx]);
+}
+
+// Populate Tier dropdowns
+function initTierDropdowns() {
+  var selRate = document.getElementById('selTierRate');
+  var selSpec = document.getElementById('selTierSpec');
+  if (!selRate || !selSpec) return;
+
+  var opts = '';
+  EQUIPMENT_TIERS.forEach(function(t) {
+    opts += '<option value="' + t.tier + '">Tier ' + t.tier + ' (+' + t.boostPct + '%)</option>';
+  });
+  selRate.innerHTML = opts;
+  selSpec.innerHTML = opts;
+}
+
+// Read inputs from DOM into state
+function readInputs() {
+  state.totalBudget = Math.max(0, parseFloat(document.getElementById('inpTotalBudget').value) || 0);
+
+  state.baseSources.enchants = parseFloat(document.getElementById('inpEnchants').value) || 0;
+  state.baseSources.pets = parseFloat(document.getElementById('inpPetsStat').value) || 0;
+  state.baseSources.stable = parseFloat(document.getElementById('inpVillageStable').value) || 0;
+  state.baseSources.explorations = parseFloat(document.getElementById('inpVillageExplorations').value) || 0;
+  state.baseSources.skillTree = parseFloat(document.getElementById('inpSkillTreeStat').value) || 0;
+  state.baseSources.sculptures = parseFloat(document.getElementById('inpCurrentSculptureRate').value) || 0;
+
+  state.pvpTile = parseFloat(document.getElementById('inpPvpTile').value) || 0;
+  state.vipPct = parseFloat(document.getElementById('inpVipPct').value) || 0;
+  state.potionPct = parseFloat(document.getElementById('inpPotionPct').value) || 0;
+  state.eventPct = parseFloat(document.getElementById('inpEventPct').value) || 0;
+
+  state.charStats.strength = parseFormattedNumber(document.getElementById('inpCharStrength').value);
+  state.charStats.health = parseFormattedNumber(document.getElementById('inpCharHealth').value);
+  state.charStats.dexterity = parseFormattedNumber(document.getElementById('inpCharDexterity').value);
+  state.charStats.agility = parseFormattedNumber(document.getElementById('inpCharAgility').value);
+
+  state.externalDrops.strength = parseFloat(document.getElementById('inpExtStrength').value) || 0;
+  state.externalDrops.health = parseFloat(document.getElementById('inpExtHealth').value) || 0;
+  state.externalDrops.dexterity = parseFloat(document.getElementById('inpExtDexterity').value) || 0;
+  state.externalDrops.agility = parseFloat(document.getElementById('inpExtAgility').value) || 0;
+
+  state.sanctum.level = parseFormattedNumber(document.getElementById('inpSanctumLevel').value) || 78189;
+  state.sanctum.tierRate = parseInt(document.getElementById('selTierRate').value, 10) || 13;
+  state.sanctum.tierSpec = parseInt(document.getElementById('selTierSpec').value, 10) || 13;
+  state.sanctum.maxModifiers = document.getElementById('selMaxSanctums').value;
+
+  state.partner.speedPoints = Math.max(0, parseFloat(document.getElementById('inpPartnerSpeedPoints').value) || 0);
+  state.partner.dropsActive = document.getElementById('chkPartnerDrops').checked;
+  state.partner.count = state.partner.dropsActive ? (parseInt(document.getElementById('inpPartnerCount').value, 10) || 0) : 0;
+  state.statGainMultiplier = parseFloat(document.getElementById('inpStatGainMultiplier').value) || 16.01;
+
+  // Matrix reads
+  var chkRateAllowed = document.getElementById('chk_sanctum_rate');
+  if (chkRateAllowed) state.matrix.statRate.allowed = chkRateAllowed.checked;
+
+  STAT_KEYS.forEach(function(k) {
+    var chkGrid = document.getElementById('chk_grid_' + k);
+    if (chkGrid) state.matrix[k].active = chkGrid.checked;
+    var inpRatio = document.getElementById('inp_ratio_' + k);
+    if (inpRatio) state.matrix[k].ratio = Math.max(0, parseFloat(inpRatio.value) || 0);
+    var chkAllowed = document.getElementById('chk_sanctum_' + k);
+    if (chkAllowed) state.matrix[k].allowed = chkAllowed.checked;
+  });
+
+  var chkPxpGrid = document.getElementById('chk_grid_partner_xp');
+  if (chkPxpGrid) state.matrix.partnerXp.active = chkPxpGrid.checked;
+  var inpPxpRatio = document.getElementById('inp_ratio_partner_xp');
+  if (inpPxpRatio) state.matrix.partnerXp.ratio = Math.max(0, parseFloat(inpPxpRatio.value) || 0);
+}
+
+// Build matrix table
+function renderMatrixTable() {
+  var tbody = document.getElementById('matrixTableBody');
+  if (!tbody) return;
+
+  var sanctumRatePct = calcSanctumModPercent(state.sanctum.level, state.sanctum.tierRate, false);
+  var sanctumSpecPct = calcSanctumModPercent(state.sanctum.level, state.sanctum.tierSpec, true);
+
+  var html = '';
+
+  // Specific stats: Strength, Health, Dexterity, Agility
+  STAT_KEYS.forEach(function(k) {
+    var m = state.matrix[k];
+    var meta = STAT_META[k];
+    html += '<tr>' +
+      '<td style="text-align:center"><input type="checkbox" id="chk_grid_' + k + '" ' + (m.active ? 'checked' : '') + ' style="cursor:pointer"></td>' +
+      '<td style="text-align:left"><span class="stat-tag ' + meta.tagClass + '"></span><span class="' + meta.class + '">' + meta.name + '</span></td>' +
+      '<td class="num"><input type="number" id="inp_ratio_' + k + '" value="' + m.ratio + '" min="0" step="0.5" style="width:4.6rem;text-align:right"></td>' +
+      '<td class="num" id="out_grid_' + k + '" style="font-weight:700;color:var(--warm)">—</td>' +
+      '<td class="num" id="out_sanctum_pct_' + k + '" style="font-weight:600">+' + fmt(sanctumSpecPct, 1) + '%</td>' +
+      '<td style="text-align:center"><input type="checkbox" id="chk_sanctum_' + k + '" ' + (m.allowed ? 'checked' : '') + ' style="cursor:pointer"></td>' +
+      '<td class="num" id="out_drop_' + k + '">—</td>' +
+      '<td class="num" id="out_drops_hr_' + k + '">—</td>' +
+      '</tr>';
+  });
+
+  // Stat Rate %
+  html += '<tr style="background:rgba(106,72,234,0.04)">' +
+    '<td style="text-align:center"><span class="badge badge-highlight">Auto</span></td>' +
+    '<td style="text-align:left"><span class="stat-tag tag-rate"></span><span class="stat-rate">Stat Rate %</span></td>' +
+    '<td class="num" style="color:var(--text-faint)"><i>Calculated</i></td>' +
+    '<td class="num" id="out_grid_rate" style="font-weight:700;color:var(--highlight)">—</td>' +
+    '<td class="num" id="out_sanctum_pct_rate" style="font-weight:600">+' + fmt(sanctumRatePct, 1) + '%</td>' +
+    '<td style="text-align:center"><input type="checkbox" id="chk_sanctum_rate" ' + (state.matrix.statRate.allowed ? 'checked' : '') + ' style="cursor:pointer"></td>' +
+    '<td class="num" style="color:var(--text-faint)">Global Divisor</td>' +
+    '<td class="num" id="out_drops_hr_rate">—</td>' +
+    '</tr>';
+
+  // Partner XP
+  html += '<tr style="background:rgba(6,182,212,0.04)">' +
+    '<td style="text-align:center"><input type="checkbox" id="chk_grid_partner_xp" ' + (state.matrix.partnerXp.active ? 'checked' : '') + ' style="cursor:pointer"></td>' +
+    '<td style="text-align:left"><span class="stat-tag tag-partner"></span><span class="stat-partner">Partner XP</span></td>' +
+    '<td class="num"><input type="number" id="inp_ratio_partner_xp" value="' + state.matrix.partnerXp.ratio + '" min="0" step="0.5" style="width:4.6rem;text-align:right"></td>' +
+    '<td class="num" id="out_grid_partner_xp" style="font-weight:600;color:var(--accent)">—</td>' +
+    '<td class="num" style="color:var(--text-faint)">None</td>' +
+    '<td style="text-align:center;color:var(--text-faint)">—</td>' +
+    '<td class="num" style="color:var(--text-faint)">10× Cost</td>' +
+    '<td class="num" style="color:var(--text-faint)">PXP Gain</td>' +
+    '</tr>';
+
+  tbody.innerHTML = html;
+
+  tbody.querySelectorAll('input').forEach(function(inp) {
+    inp.addEventListener('input', scheduleRender);
+    inp.addEventListener('change', scheduleRender);
+  });
+}
+
+function computeAndRender() {
+  readInputs();
+
+  // Compute Partner Action interval from Speed Points
+  var effSpeed = state.partner.speedPoints;
+  var partnerInterval = 18 / (0.1 + effSpeed / (effSpeed + 10000));
+  partnerInterval = Math.max(16.36, partnerInterval);
+  var outPSeconds = document.getElementById('outPartnerSeconds');
+  if (outPSeconds) outPSeconds.textContent = fmt(partnerInterval, 1) + 's';
+
+  // Base without sculptures calculation
+  var baseWithoutSculptures = state.baseSources.enchants + state.baseSources.pets +
+    state.baseSources.stable + state.baseSources.explorations + state.baseSources.skillTree;
+
+  // Sanctum map modifiers
+  var sanctumRatePct = calcSanctumModPercent(state.sanctum.level, state.sanctum.tierRate, false);
+  var sanctumSpecPct = calcSanctumModPercent(state.sanctum.level, state.sanctum.tierSpec, true);
+
+  var outSancRate = document.getElementById('out_sanctum_pct_rate');
+  if (outSancRate) outSancRate.textContent = '+' + fmt(sanctumRatePct, 1) + '%';
+  STAT_KEYS.forEach(function(k) {
+    var el = document.getElementById('out_sanctum_pct_' + k);
+    if (el) el.textContent = '+' + fmt(sanctumSpecPct, 1) + '%';
+  });
+
+  var effSanctumStatRate = state.matrix.statRate.allowed ? sanctumRatePct : 0;
+
+  var activeStatsList = STAT_KEYS.filter(function(k) { return state.matrix[k].active; });
+  var statRatios = {};
+  var statExternalBonusesPct = {};
+  var statValues = {};
+  var sanctumStatMultipliersPct = {};
+
+  activeStatsList.forEach(function(k) {
+    statRatios[k] = state.matrix[k].ratio;
+    statExternalBonusesPct[k] = state.externalDrops[k] || 0;
+    statValues[k] = state.charStats[k] || 500000;
+    sanctumStatMultipliersPct[k] = state.matrix[k].allowed ? sanctumSpecPct : 0;
+  });
+
+  var opt = optimizeSculptureGrid({
+    totalBudgetNormalized: state.totalBudget,
+    partnerXpRatio: state.matrix.partnerXp.ratio,
+    partnerXpActive: state.matrix.partnerXp.active,
+    baseWithoutSculpturesPct: baseWithoutSculptures,
+    pvpPct: state.pvpTile,
+    premiumPct: state.vipPct + state.potionPct,
+    eventPct: state.eventPct,
+    currentSculptureStatRatePct: state.baseSources.sculptures,
+    sanctumStatRatePct: effSanctumStatRate,
+    activeStats: activeStatsList,
+    statRatios: statRatios,
+    statExternalBonusesPct: statExternalBonusesPct,
+    statValues: statValues,
+    sanctumStatMultipliersPct: sanctumStatMultipliersPct
+  });
+
+  // Actions per hour
+  var charActionsHr = 360; // Static 10s interval
+  var partnerActionsHr = (state.partner.dropsActive && state.partner.count > 0) ? state.partner.count * (3600 / partnerInterval) : 0;
+  var totalActionsHr = charActionsHr + partnerActionsHr;
+
+  // Verdict Card
+  document.getElementById('verdictRatePct').textContent = fmt(opt.optimalStatRatePct, 1) + '%';
+  document.getElementById('verdictSpecBudget').textContent = fmt(opt.optimalSpecificBudgetNormalized, 1) + '%';
+  document.getElementById('verdictRateBudget').textContent = fmtInt(opt.optimalStatRateNormalized);
+  document.getElementById('verdictSpecBudget2').textContent = fmtInt(opt.optimalSpecificBudgetNormalized);
+
+  var kpiBreakEven = document.getElementById('kpiBreakEven');
+  kpiBreakEven.textContent = fmt(opt.breakEvenRatioAtOptimal, 3) + '×';
+  document.getElementById('kpiBreakEvenSub').textContent = 'Current: ' + fmt(opt.breakEvenRatioAtCurrent, 2) + '× (' +
+    (opt.breakEvenRatioAtCurrent > 1.05 ? 'Under-invested in Stat Rate' : (opt.breakEvenRatioAtCurrent < 0.95 ? 'Over-invested in Stat Rate' : 'Balanced')) + ')';
+
+  var kpiGain = document.getElementById('kpiGain');
+  kpiGain.textContent = (opt.gainPct >= 0 ? '+' : '') + fmt(opt.gainPct, 1) + '%';
+  kpiGain.style.color = opt.gainPct > 0 ? 'var(--accent)' : 'var(--text)';
+
+  var Base_opt = (baseWithoutSculptures + opt.optimalStatRatePct) / 100;
+  var M_ext = (1 + state.pvpTile / 100) * (1 + (state.vipPct + state.potionPct) / 100) * (1 + state.eventPct / 100);
+  var statBoostTotalOptimal = ((1 + Base_opt) * M_ext * (1 + effSanctumStatRate / 100) - 1) * 100;
+  document.getElementById('kpiStatBoostTotal').textContent = fmt(statBoostTotalOptimal, 1) + '%';
+  document.getElementById('kpiStatBoostSub').textContent = 'Base: ' + fmt(baseWithoutSculptures + opt.optimalStatRatePct, 1) + '%';
+
+  // Matrix outputs
+  var outRateGrid = document.getElementById('out_grid_rate');
+  if (outRateGrid) outRateGrid.textContent = '+' + fmt(opt.optimalStatRatePct, 2) + '% (' + fmtInt(opt.optimalStatRateNormalized) + ' pts)';
+
+  var totalStatsHr = 0;
+
+  STAT_KEYS.forEach(function(k) {
+    var outGrid = document.getElementById('out_grid_' + k);
+    var outDrop = document.getElementById('out_drop_' + k);
+    var outHr = document.getElementById('out_drops_hr_' + k);
+    if (!outGrid) return;
+
+    if (!state.matrix[k].active) {
+      outGrid.textContent = 'Excluded';
+      outGrid.style.color = 'var(--text-faint)';
+      outDrop.textContent = '—';
+      outHr.textContent = '—';
+      return;
+    }
+
+    var allocPct = opt.statAllocationsPct[k] || 0;
+    outGrid.textContent = '+' + fmt(allocPct, 1) + '%';
+    outGrid.style.color = 'var(--warm)';
+
+    var totalStatSpecific = ((state.externalDrops[k] || 0) + allocPct) / 100;
+    var s_i = state.matrix[k].allowed ? (sanctumSpecPct / 100) : 0;
+    var effSpecific = (1 + totalStatSpecific) * (1 + s_i);
+    var effStatBoost = (1 + statBoostTotalOptimal / 100);
+    var C_i = calcStatDropDenominator(state.charStats[k] || 500000);
+
+    var N = C_i / (effStatBoost * effSpecific);
+    outDrop.textContent = '1 / ' + fmt(N, 1);
+
+    var dropsPerHour = (totalActionsHr / N) * state.statGainMultiplier;
+    outHr.textContent = fmtK(dropsPerHour);
+    totalStatsHr += dropsPerHour;
+  });
+
+  document.getElementById('kpiStatsPerHour').textContent = fmtK(totalStatsHr);
+  document.getElementById('kpiStatsPerDay').textContent = fmtK(totalStatsHr * 24) + ' stats / day';
+
+  var outPxpGrid = document.getElementById('out_grid_partner_xp');
+  if (outPxpGrid) {
+    outPxpGrid.textContent = state.matrix.partnerXp.active ? '+' + fmt(opt.partnerXpPct, 1) + '% (' + fmtInt(opt.partnerXpBudgetNormalized) + ' pts)' : '0%';
+  }
+
+  renderSanctumRankings(sanctumRatePct, sanctumSpecPct, baseWithoutSculptures);
+  renderSensitivitySweep(opt);
+  renderCalcSteps(opt, statBoostTotalOptimal, baseWithoutSculptures);
+}
+
+// Sanctum Combination Rankings
+function renderSanctumRankings(sanctumRatePct, sanctumSpecPct, baseWithoutSculptures) {
+  var tbody = document.getElementById('sanctumRankingsBody');
+  var lblMax = document.getElementById('lblMaxSanctumsText');
+  if (!tbody) return;
+
+  var maxK = state.sanctum.maxModifiers === 'all' ? 5 : parseInt(state.sanctum.maxModifiers, 10);
+  if (lblMax) lblMax.textContent = state.sanctum.maxModifiers === 'all' ? 'All Modifiers' : maxK + ' Max Modifiers';
+
+  var candidates = [];
+  if (state.matrix.statRate.allowed) {
+    candidates.push({ key: 'rate', name: '<span class="stat-rate">Stat Rate</span> (+' + fmt(sanctumRatePct, 0) + '%)', isRate: true });
+  }
+
+  STAT_KEYS.forEach(function(k) {
+    if (state.matrix[k].active && state.matrix[k].allowed) {
+      candidates.push({ key: k, name: '<span class="' + STAT_META[k].class + '">' + STAT_META[k].name.replace(' Drop Rate', '') + '</span> (+' + fmt(sanctumSpecPct, 0) + '%)', isRate: false });
+    }
+  });
+
+  function getSubsets(arr, k) {
+    var result = [[]];
+    for (var i = 0; i < arr.length; i++) {
+      var item = arr[i];
+      var len = result.length;
+      for (var j = 0; j < len; j++) {
+        var sub = result[j].concat([item]);
+        if (sub.length <= k) result.push(sub);
+      }
+    }
+    return result;
+  }
+
+  var allCombos = getSubsets(candidates, maxK);
+
+  var evaluated = allCombos.map(function(combo) {
+    var hasRate = combo.some(function(c) { return c.isRate; });
+    var effSanctumStatRate = hasRate ? sanctumRatePct : 0;
+
+    var activeStatsList = STAT_KEYS.filter(function(k) { return state.matrix[k].active; });
+    var statRatios = {};
+    var statExternalBonusesPct = {};
+    var statValues = {};
+    var sanctumStatMultipliersPct = {};
+
+    activeStatsList.forEach(function(k) {
+      statRatios[k] = state.matrix[k].ratio;
+      statExternalBonusesPct[k] = state.externalDrops[k] || 0;
+      statValues[k] = state.charStats[k] || 500000;
+      var isActiveInCombo = combo.some(function(c) { return c.key === k; });
+      sanctumStatMultipliersPct[k] = isActiveInCombo ? sanctumSpecPct : 0;
+    });
+
+    var opt = optimizeSculptureGrid({
+      totalBudgetNormalized: state.totalBudget,
+      partnerXpRatio: state.matrix.partnerXp.ratio,
+      partnerXpActive: state.matrix.partnerXp.active,
+      baseWithoutSculpturesPct: baseWithoutSculptures,
+      pvpPct: state.pvpTile,
+      premiumPct: state.vipPct + state.potionPct,
+      eventPct: state.eventPct,
+      currentSculptureStatRatePct: state.baseSources.sculptures,
+      sanctumStatRatePct: effSanctumStatRate,
+      activeStats: activeStatsList,
+      statRatios: statRatios,
+      statExternalBonusesPct: statExternalBonusesPct,
+      statValues: statValues,
+      sanctumStatMultipliersPct: sanctumStatMultipliersPct
+    });
+
+    var charActionsHr = 360;
+    var partnerInterval = Math.max(16.36, 18 / (0.1 + state.partner.speedPoints / (state.partner.speedPoints + 10000)));
+    var partnerActionsHr = (state.partner.dropsActive && state.partner.count > 0) ? state.partner.count * (3600 / partnerInterval) : 0;
+    var totalActionsHr = charActionsHr + partnerActionsHr;
+
+    var Base_opt = (baseWithoutSculptures + opt.optimalStatRatePct) / 100;
+    var M_ext = (1 + state.pvpTile / 100) * (1 + (state.vipPct + state.potionPct) / 100) * (1 + state.eventPct / 100);
+    var statBoostTotal = ((1 + Base_opt) * M_ext * (1 + effSanctumStatRate / 100) - 1) * 100;
+
+    var totalDropsHr = 0;
+    activeStatsList.forEach(function(k) {
+      var allocPct = opt.statAllocationsPct[k] || 0;
+      var totalStatSpecific = ((state.externalDrops[k] || 0) + allocPct) / 100;
+      var s_i = sanctumStatMultipliersPct[k] / 100;
+      var effSpecific = (1 + totalStatSpecific) * (1 + s_i);
+      var effStatBoost = (1 + statBoostTotal / 100);
+      var C_i = calcStatDropDenominator(state.charStats[k] || 500000);
+      var N = C_i / (effStatBoost * effSpecific);
+      totalDropsHr += (totalActionsHr / N) * state.statGainMultiplier;
+    });
+
+    var label = combo.length === 0 ? '<i>None (Battling / Normal)</i>' : combo.map(function(c) { return c.name; }).join(' + ');
+
+    return {
+      combo: combo,
+      label: label,
+      opt: opt,
+      totalDropsHr: totalDropsHr
+    };
+  });
+
+  evaluated.sort(function(a, b) { return b.totalDropsHr - a.totalDropsHr; });
+
+  var baseline = evaluated[evaluated.length - 1].totalDropsHr || 1;
+  var top10 = evaluated.slice(0, 8);
+
+  var html = '';
+  top10.forEach(function(row, idx) {
+    var rel = (row.totalDropsHr / baseline);
+    html += '<tr>' +
+      '<td style="text-align:center;font-weight:700">' + (idx + 1) + '</td>' +
+      '<td style="text-align:left">' + row.label + '</td>' +
+      '<td class="num" style="font-weight:600;color:var(--highlight)">+' + fmt(row.opt.optimalStatRatePct, 1) + '%</td>' +
+      '<td class="num" style="font-weight:600;color:var(--warm)">' + fmtInt(row.opt.optimalSpecificBudgetNormalized) + ' pts</td>' +
+      '<td class="num" style="font-weight:700">' + fmtK(row.totalDropsHr) + '</td>' +
+      '<td class="num"><span class="badge badge-success">' + fmt(rel, 2) + '×</span></td>' +
+      '</tr>';
+  });
+
+  tbody.innerHTML = html;
+}
+
+// Render Sensitivity Sweep
+function renderSensitivitySweep(opt) {
+  var container = document.getElementById('sweepContainer');
+  if (!container) return;
+
+  var B = opt.B_avail || 6000;
+  var steps = 10;
+  var sweepPoints = [];
+
+  for (var i = 0; i <= steps; i++) {
+    sweepPoints.push((B / steps) * i);
+  }
+
+  sweepPoints.push(opt.currentStatRateNormalized);
+  sweepPoints.push(opt.optimalStatRateNormalized);
+  sweepPoints.sort(function(a, b) { return a - b; });
+
+  var dedup = [];
+  for (var j = 0; j < sweepPoints.length; j++) {
+    if (j === 0 || Math.abs(sweepPoints[j] - sweepPoints[j - 1]) > 50) {
+      dedup.push(sweepPoints[j]);
+    }
+  }
+
+  var maxUtil = opt.optimalUtility > 0 ? opt.optimalUtility : 1;
+
+  var html = '<div class="sweep-bar-row" style="font-weight:600;color:var(--text-faint)">' +
+    '<span>Stat Rate Pts</span><span>Relative Yield Curve</span><span style="text-align:right">Rate %</span><span style="text-align:right">Ratio</span></div>';
+
+  dedup.forEach(function(x) {
+    var u = opt.evalUtility(x);
+    var pct = Math.max(2, (u / maxUtil) * 100);
+    var isOpt = Math.abs(x - opt.optimalStatRateNormalized) < 25;
+    var isCurr = Math.abs(x - opt.currentStatRateNormalized) < 25;
+
+    var fillClass = isOpt ? 'sweep-bar-fill optimal' : (isCurr ? 'sweep-bar-fill current' : 'sweep-bar-fill');
+    var badge = isOpt ? ' <span class="badge badge-highlight">Optimal</span>' : (isCurr ? ' <span class="badge">Current</span>' : '');
+
+    html += '<div class="sweep-bar-row">' +
+      '<span style="font-family:var(--num)">' + fmtInt(x) + badge + '</span>' +
+      '<div class="sweep-bar-bg"><div class="' + fillClass + '" style="width:' + pct + '%"></div></div>' +
+      '<span style="font-family:var(--num);text-align:right">+' + fmt(x / 5, 1) + '%</span>' +
+      '<span style="font-family:var(--num);text-align:right">' + fmt((pct / 100), 2) + '×</span>' +
+      '</div>';
+  });
+
+  container.innerHTML = html;
+}
+
+// Render Step-by-Step Rail
+function renderCalcSteps(opt, statBoostTotalOptimal, baseWithoutSculptures) {
+  var rail = document.getElementById('calcStepsList');
+  if (!rail) return;
+
+  var html = '' +
+    '<div class="step-row">' +
+      '<div class="step-num">1</div>' +
+      '<div>' +
+        '<div class="step-title">Effective Grid Budget &amp; Partner XP Allocation</div>' +
+        '<div>Total normalized budget: <span class="step-code">' + fmtInt(state.totalBudget) + '</span> pts. Partner XP allocation: <span class="step-code">' + fmtInt(opt.partnerXpBudgetNormalized) + '</span> pts (+' + fmt(opt.partnerXpPct, 1) + '% PXP). Available for stat optimization: <span class="step-code">B_avail = ' + fmtInt(opt.B_avail) + '</span> pts.</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="step-row">' +
+      '<div class="step-num">2</div>' +
+      '<div>' +
+        '<div class="step-title">Global Stat Rate Multiplier Term (&alpha; and &beta;)</div>' +
+        '<div>Base without sculptures = <span class="step-code">' + fmt(baseWithoutSculptures, 1) + '%</span>. External Category Multiplier M_ext = <span class="step-code">' + fmt((1 + state.pvpTile/100)*(1 + (state.vipPct+state.potionPct)/100)*(1 + state.eventPct/100), 3) + '</span>.</div>' +
+        '<div>Since Stat Rate on sculptures gets 1/5th bonus: <span class="step-code">&alpha; = ' + fmt(opt.alpha, 3) + '</span>, <span class="step-code">&beta; = ' + fmt(opt.beta, 4) + '</span> (where &alpha;/&beta; = 5 &times; (1 + Base_other) = ' + fmt(5*(1 + baseWithoutSculptures/100), 2) + ').</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="step-row">' +
+      '<div class="step-num">3</div>' +
+      '<div>' +
+        '<div class="step-title">Specific Stat Drop Multipliers (&Gamma; and &Delta;)</div>' +
+        '<div>Aggregating across active droppable stats: <span class="step-code">&Gamma; = ' + fmt(opt.Gamma, 4) + '</span>, <span class="step-code">&Delta; = ' + fmt(opt.Delta, 6) + '</span>.</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="step-row">' +
+      '<div class="step-num">4</div>' +
+      '<div>' +
+        '<div class="step-title">Closed-Form Optimum (Zero-Derivative Condition)</div>' +
+        '<div>Objective parabola V(x) = (&alpha; + &beta;x)(&Gamma; - &Delta;x). Maximum occurs exactly at:</div>' +
+        '<div><span class="step-code">x* = 0.5 &times; (&Gamma;/&Delta; - &alpha;/&beta;) = ' + fmt(opt.optimalStatRateNormalized, 1) + ' pts</span> (&rarr; <span class="step-code">+' + fmt(opt.optimalStatRatePct, 2) + '%</span> Stat Rate on Sculpture Grid).</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="step-row">' +
+      '<div class="step-num">5</div>' +
+      '<div>' +
+        '<div class="step-title">Marginal Break-Even Condition</div>' +
+        '<div>Marginal efficiency ratio: <span class="step-code">ME_rate / ME_spec = ' + fmt(opt.breakEvenRatioAtOptimal, 4) + '&times;</span> at optimum (perfect break-even).</div>' +
+      '</div>' +
+    '</div>';
+
+  rail.innerHTML = html;
+}
+
+var renderPending = false;
+function scheduleRender() {
+  if (renderPending) return;
+  renderPending = true;
+  var callback = function() {
+    renderPending = false;
+    computeAndRender();
+    scheduleSave();
+  };
+  if (document.hidden) {
+    setTimeout(callback, 20);
+  } else {
+    requestAnimationFrame(callback);
+  }
+}
+
+var saveTimer = null;
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(function() {
+    try {
+      localStorage.setItem('APOZ_SCULPTURE_OPT_STATE', JSON.stringify(state));
+    } catch(e) {}
+  }, 800);
+}
+
+function loadSavedState() {
+  try {
+    var raw = localStorage.getItem('APOZ_SCULPTURE_OPT_STATE');
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      for (var k in parsed) {
+        if (state.hasOwnProperty(k)) state[k] = parsed[k];
+      }
+    }
+  } catch(e) {}
+}
+
+function init() {
+  initTips();
+  initTierDropdowns();
+  loadSavedState();
+
+  // Apply restored theme
+  var savedTheme = localStorage.getItem('APOZ_THEME') || state.theme || 'dark-beach';
+  applyTheme(savedTheme);
+
+  // Populate UI from state
+  document.getElementById('inpTotalBudget').value = state.totalBudget;
+
+  document.getElementById('inpEnchants').value = state.baseSources.enchants;
+  document.getElementById('inpPetsStat').value = state.baseSources.pets;
+  document.getElementById('inpVillageStable').value = state.baseSources.stable;
+  document.getElementById('inpVillageExplorations').value = state.baseSources.explorations;
+  document.getElementById('inpSkillTreeStat').value = state.baseSources.skillTree;
+  document.getElementById('inpCurrentSculptureRate').value = state.baseSources.sculptures;
+
+  document.getElementById('inpPvpTile').value = state.pvpTile;
+  document.getElementById('inpVipPct').value = state.vipPct;
+  document.getElementById('inpPotionPct').value = state.potionPct;
+  document.getElementById('inpEventPct').value = state.eventPct;
+
+  document.getElementById('inpCharStrength').value = fmtInt(state.charStats.strength);
+  document.getElementById('inpCharHealth').value = fmtInt(state.charStats.health);
+  document.getElementById('inpCharDexterity').value = fmtInt(state.charStats.dexterity);
+  document.getElementById('inpCharAgility').value = fmtInt(state.charStats.agility);
+
+  document.getElementById('inpExtStrength').value = state.externalDrops.strength;
+  document.getElementById('inpExtHealth').value = state.externalDrops.health;
+  document.getElementById('inpExtDexterity').value = state.externalDrops.dexterity;
+  document.getElementById('inpExtAgility').value = state.externalDrops.agility;
+
+  document.getElementById('inpSanctumLevel').value = fmtInt(state.sanctum.level);
+  document.getElementById('selTierRate').value = state.sanctum.tierRate;
+  document.getElementById('selTierSpec').value = state.sanctum.tierSpec;
+  document.getElementById('selMaxSanctums').value = state.sanctum.maxModifiers;
+
+  document.getElementById('inpPartnerSpeedPoints').value = state.partner.speedPoints;
+  document.getElementById('chkPartnerDrops').checked = state.partner.dropsActive;
+  document.getElementById('inpPartnerCount').value = state.partner.count;
+  document.getElementById('inpStatGainMultiplier').value = state.statGainMultiplier;
+
+  // Live Userscript Handover Check
+  if (window.APOZ_LIVE) {
+    var banner = document.getElementById('liveUserscriptBanner');
+    if (banner) banner.removeAttribute('hidden');
+    document.getElementById('btnApplyLive').addEventListener('click', function() {
+      if (!window.APOZ_LIVE) return;
+      var live = window.APOZ_LIVE;
+      if (live.stats) {
+        if (live.stats.strength) state.charStats.strength = live.stats.strength;
+        if (live.stats.health) state.charStats.health = live.stats.health;
+        if (live.stats.dexterity) state.charStats.dexterity = live.stats.dexterity;
+        if (live.stats.agility) state.charStats.agility = live.stats.agility;
+        document.getElementById('inpCharStrength').value = fmtInt(state.charStats.strength);
+        document.getElementById('inpCharHealth').value = fmtInt(state.charStats.health);
+        document.getElementById('inpCharDexterity').value = fmtInt(state.charStats.dexterity);
+        document.getElementById('inpCharAgility').value = fmtInt(state.charStats.agility);
+      }
+      scheduleRender();
+    });
+  }
+
+  // Sidebar events
+  var sidebarInputs = document.querySelectorAll('.sidebar input, .sidebar select');
+  sidebarInputs.forEach(function(el) {
+    el.addEventListener('input', scheduleRender);
+    el.addEventListener('change', scheduleRender);
+  });
+
+  // Format large number inputs with commas on blur
+  ['inpCharStrength', 'inpCharHealth', 'inpCharDexterity', 'inpCharAgility', 'inpSanctumLevel'].forEach(function(id) {
+    var inp = document.getElementById(id);
+    if (!inp) return;
+    inp.addEventListener('blur', function() {
+      var val = parseFormattedNumber(inp.value);
+      inp.value = fmtInt(val);
+      scheduleRender();
+    });
+  });
+
+  // Buttons
+  document.getElementById('btnThemeToggle').addEventListener('click', toggleTheme);
+
+  document.getElementById('btnReset').addEventListener('click', function() {
+    state = JSON.parse(JSON.stringify(DEFAULTS));
+    localStorage.removeItem('APOZ_SCULPTURE_OPT_STATE');
+    init();
+  });
+
+  document.getElementById('btnSaveDefault').addEventListener('click', function() {
+    readInputs();
+    try {
+      localStorage.setItem('APOZ_SCULPTURE_OPT_STATE', JSON.stringify(state));
+      alert('Saved current configuration as default!');
+    } catch(e) {}
+  });
+
+  // Profile paste handlers
+  var pasteInput = document.getElementById('profilePasteInput');
+  var parseStatusBadge = document.getElementById('parseStatusBadge');
+  var parseSummary = document.getElementById('parseSummary');
+
+  document.getElementById('btnApplyParsed').addEventListener('click', function() {
+    var txt = pasteInput.value;
+    if (!txt.trim()) return;
+    var parsed = parseProfileStatBoost(txt);
+    if (!parsed) return;
+
+    state.baseSources.enchants = parsed.sources.enchantsPct;
+    state.baseSources.pets = parsed.sources.petsPct;
+    state.baseSources.stable = parsed.sources.villageStablePct;
+    state.baseSources.explorations = parsed.sources.villageExplorationsPct;
+    state.baseSources.skillTree = parsed.sources.skillTreePct;
+    state.baseSources.sculptures = parsed.sources.sculpturesPct;
+
+    state.pvpTile = parsed.categories.pvpPct;
+    state.vipPct = parsed.sources.vipPct;
+    state.potionPct = parsed.sources.potionPct;
+    state.eventPct = parsed.categories.eventPct;
+
+    document.getElementById('inpEnchants').value = state.baseSources.enchants;
+    document.getElementById('inpPetsStat').value = state.baseSources.pets;
+    document.getElementById('inpVillageStable').value = state.baseSources.stable;
+    document.getElementById('inpVillageExplorations').value = state.baseSources.explorations;
+    document.getElementById('inpSkillTreeStat').value = state.baseSources.skillTree;
+    document.getElementById('inpCurrentSculptureRate').value = state.baseSources.sculptures;
+
+    document.getElementById('inpPvpTile').value = state.pvpTile;
+    document.getElementById('inpVipPct').value = state.vipPct;
+    document.getElementById('inpPotionPct').value = state.potionPct;
+    document.getElementById('inpEventPct').value = state.eventPct;
+
+    parseStatusBadge.textContent = 'Applied';
+    parseStatusBadge.className = 'badge badge-success';
+    parseSummary.innerHTML = 'Extracted: Total <b>' + fmt(parsed.totalStatBoostPct, 2) + '%</b> | Base (excl. sculp) <b>' +
+      fmt(parsed.baseWithoutSculpturesPct, 2) + '%</b> | Sculptures <b>' + fmt(parsed.sources.sculpturesPct, 2) + '%</b> | PvP <b>' +
+      fmt(parsed.categories.pvpPct, 2) + '%</b> | Premium <b>' + fmt(parsed.categories.premiumPct, 2) + '%</b>';
+
+    scheduleRender();
+  });
+
+  document.getElementById('btnLoadSample').addEventListener('click', function() {
+    var sample = "Stat boost\n1.784,02%\nIncreases stat gained globally\n\n(1 + 974,61%) × (1 + 10,31%) × (1 + 58,93%) × (1 + 0%) - 1 = 1.784,02%\nBase\n974,61%\n├─\nEnchants\nEquipment\n525,7%\n├─\nStat\nPets\n0%\n├─\nStable\nVillage\n360%\n├─\nExplorations\nVillage\n66%\n├─\nStat\nSkill tree\n0%\n├─\nStat\nSculptures\n22,9%\nPvP\n10,31%\n├─\nStat Tile\nVillage\n10,31%\nPremium\n58,93%\n├─\nVIP\nPremium\n10%\n├─\nStat\nPotion\n48,93%\nEvent\n0%\n├─\nEvent\nEvent\n0%";
+    pasteInput.value = sample;
+    document.getElementById('btnApplyParsed').click();
+  });
+
+  document.getElementById('btnClearPaste').addEventListener('click', function() {
+    pasteInput.value = '';
+    parseStatusBadge.textContent = 'Ready';
+    parseStatusBadge.className = 'badge';
+    parseSummary.textContent = '';
+  });
+
+  renderMatrixTable();
+  computeAndRender();
+
+  var btnBackTop = document.getElementById('btnBackTop');
+  window.addEventListener('scroll', function() {
+    if (window.scrollY > 300) {
+      btnBackTop.classList.add('visible');
+    } else {
+      btnBackTop.classList.remove('visible');
+    }
+  });
+  btnBackTop.addEventListener('click', function() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>

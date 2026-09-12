@@ -1,6 +1,6 @@
 {
   "channel": "live",
-  "generated": "2026-09-11T12:07:09.159Z",
+  "generated": "2026-09-12T08:06:40.660Z",
   "core": {
     "version": "6.13.7",
     "url": "https://raw.githubusercontent.com/awoo-vibe-sniffa/apoz-core-releases/main/live/apoz-core.user.js"
@@ -9,7 +9,7 @@
     {
       "id": "eta-tracker",
       "label": "Combat Slot ETA Tracker",
-      "version": "4.11.5",
+      "version": "4.11.6",
       "url": "https://raw.githubusercontent.com/awoo-vibe-sniffa/apoz-core-releases/main/live/eta-tracker.user.js",
       "notes": ""
     },
